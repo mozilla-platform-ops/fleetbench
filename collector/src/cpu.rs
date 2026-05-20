@@ -3,11 +3,18 @@ use sysinfo::System;
 use crate::env::sample_load;
 use crate::inspect::{collect_cpu, collect_host, current_timestamp_utc};
 use crate::schema::{
-    Config, Environment, ErrorInfo, Output, PrimeSieve1t, PrimeSieveMt, Results, Status,
-    COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
+    Config, CpuInfo, Environment, ErrorInfo, HostInfo, Output, PrimeSieve1t, PrimeSieveMt,
+    Results, Status, COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
 };
 use crate::sieve;
 use crate::Mode;
+
+const EXIT_OK: i32 = 0;
+const EXIT_RUNTIME_ERROR: i32 = 1;
+const EXIT_CORRECTNESS_FAILED: i32 = 2;
+
+const ERR_INVALID_ARGUMENTS: &str = "invalid_arguments";
+const ERR_CORRECTNESS_CHECK_FAILED: &str = "correctness_check_failed";
 
 struct ModePreset {
     name: &'static str,
@@ -33,6 +40,8 @@ pub fn run(
     let mut sys = System::new();
     sys.refresh_cpu_all();
 
+    let host = collect_host(&sys);
+    let cpu = collect_cpu(&sys);
     let logical_cpus = sys.cpus().len() as u32;
     let preset = preset(mode);
     let prime_limit = limit.unwrap_or(preset.prime_limit);
@@ -40,14 +49,18 @@ pub fn run(
 
     let threads = match parse_threads(threads_arg, logical_cpus) {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("cpu: {e}");
-            return 1;
+        Err(msg) => {
+            return emit_failure(
+                json,
+                host,
+                cpu,
+                None,
+                ErrorInfo { kind: ERR_INVALID_ARGUMENTS.into(), message: msg },
+                EXIT_RUNTIME_ERROR,
+            );
         }
     };
 
-    let host = collect_host(&sys);
-    let cpu = collect_cpu(&sys);
     let config = Config {
         command: "cpu".into(),
         mode: preset.name.into(),
@@ -62,15 +75,42 @@ pub fn run(
     // Warmup will go between these two samples once .7 lands.
     let load_pre_timed = sample_load();
 
-    let (status, results, error) = match run_workloads(prime_limit, iter_count, threads) {
-        Ok(r) => (Status::Ok, Some(r), None),
-        Err(e) => (Status::Failed, None, Some(e)),
-    };
+    let workload_result = run_workloads(prime_limit, iter_count, threads);
 
     let load_post_timed = sample_load();
     let environment = Some(Environment { load_pre_warmup, load_pre_timed, load_post_timed });
 
-    let out = Output {
+    match workload_result {
+        Ok(results) => {
+            let out = build_output(Status::Ok, host, cpu, Some(config), environment, Some(results), None);
+            emit(json, &out, EXIT_OK)
+        }
+        Err(err) => {
+            let exit = exit_code_for(&err);
+            let out = build_output(
+                Status::Failed,
+                host,
+                cpu,
+                Some(config),
+                environment,
+                None,
+                Some(err),
+            );
+            emit(json, &out, exit)
+        }
+    }
+}
+
+fn build_output(
+    status: Status,
+    host: HostInfo,
+    cpu: CpuInfo,
+    config: Option<Config>,
+    environment: Option<Environment>,
+    results: Option<Results>,
+    error: Option<ErrorInfo>,
+) -> Output {
+    Output {
         schema_version: SCHEMA_VERSION,
         collector_version: COLLECTOR_VERSION.into(),
         cpu_suite_version: CPU_SUITE_VERSION.into(),
@@ -78,36 +118,48 @@ pub fn run(
         status,
         host,
         cpu,
-        config: Some(config),
+        config,
         environment,
         results,
-        error: error.clone(),
-    };
+        error,
+    }
+}
 
-    let emit_exit = if json {
-        match serde_json::to_string_pretty(&out) {
+fn emit_failure(
+    json: bool,
+    host: HostInfo,
+    cpu: CpuInfo,
+    config: Option<Config>,
+    error: ErrorInfo,
+    exit_code: i32,
+) -> i32 {
+    let out = build_output(Status::Failed, host, cpu, config, None, None, Some(error));
+    emit(json, &out, exit_code)
+}
+
+fn emit(json: bool, out: &Output, intended_exit: i32) -> i32 {
+    if json {
+        match serde_json::to_string_pretty(out) {
             Ok(s) => {
                 println!("{s}");
-                0
+                intended_exit
             }
             Err(e) => {
                 eprintln!("cpu: failed to serialize output: {e}");
-                1
+                EXIT_RUNTIME_ERROR
             }
         }
     } else {
-        print_human(&out);
-        0
-    };
-
-    if emit_exit != 0 {
-        return emit_exit;
+        print_human(out);
+        intended_exit
     }
+}
 
-    match (out.status, error) {
-        (Status::Ok, _) => 0,
-        (Status::Failed, Some(e)) if e.kind == "correctness_check_failed" => 2,
-        (Status::Failed, _) => 1,
+fn exit_code_for(err: &ErrorInfo) -> i32 {
+    if err.kind == ERR_CORRECTNESS_CHECK_FAILED {
+        EXIT_CORRECTNESS_FAILED
+    } else {
+        EXIT_RUNTIME_ERROR
     }
 }
 
@@ -179,6 +231,26 @@ mod tests {
     fn parse_threads_rejects_zero_and_garbage() {
         assert!(parse_threads("0", 8).is_err());
         assert!(parse_threads("abc", 8).is_err());
+    }
+
+    #[test]
+    fn exit_code_for_correctness_failure_is_two() {
+        let e = ErrorInfo {
+            kind: ERR_CORRECTNESS_CHECK_FAILED.into(),
+            message: "x".into(),
+        };
+        assert_eq!(exit_code_for(&e), EXIT_CORRECTNESS_FAILED);
+    }
+
+    #[test]
+    fn exit_code_for_other_errors_is_one() {
+        let e = ErrorInfo {
+            kind: ERR_INVALID_ARGUMENTS.into(),
+            message: "x".into(),
+        };
+        assert_eq!(exit_code_for(&e), EXIT_RUNTIME_ERROR);
+        let e2 = ErrorInfo { kind: "anything_else".into(), message: "x".into() };
+        assert_eq!(exit_code_for(&e2), EXIT_RUNTIME_ERROR);
     }
 
     #[test]
