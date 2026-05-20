@@ -3,6 +3,7 @@
 ## Commit Conventions
 
 - Do not add `Co-Authored-By` (or any other coauthor) lines to commit messages.
+- When a commit addresses a beads issue, mention the issue ID in the commit message body (e.g. `Closes fleetbench-collector-v0-8ne.3`).
 
 ---
 

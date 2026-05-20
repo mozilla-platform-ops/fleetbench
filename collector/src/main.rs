@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 mod cpu;
 mod inspect;
+mod schema;
 
 #[derive(Parser)]
 #[command(name = "fleetbench", version, about)]

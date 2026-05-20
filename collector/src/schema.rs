@@ -1,0 +1,246 @@
+use serde::{Deserialize, Serialize};
+
+pub const SCHEMA_VERSION: u32 = 2;
+pub const COLLECTOR_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CPU_SUITE_VERSION: &str = "cpu-v0";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Output {
+    pub schema_version: u32,
+    pub collector_version: String,
+    pub cpu_suite_version: String,
+    pub timestamp_utc: String,
+    pub status: Status,
+
+    pub host: HostInfo,
+    pub cpu: CpuInfo,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<Config>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<Environment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub results: Option<Results>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ErrorInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    Ok,
+    Failed,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HostInfo {
+    pub hostname: String,
+    pub os_family: String,
+    pub os_version: Option<String>,
+    pub kernel_version: Option<String>,
+    pub arch: String,
+    pub logical_cpus: u32,
+    pub physical_cpus: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CpuInfo {
+    pub brand: Option<String>,
+    pub vendor: Option<String>,
+    pub frequency_mhz: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
+    pub command: String,
+    pub mode: String,
+    pub prime_limit: u64,
+    pub iterations: u32,
+    pub threads: u32,
+    pub warmup_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warmup_prime_limit: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Environment {
+    pub load_pre_warmup: LoadSample,
+    pub load_pre_timed: LoadSample,
+    pub load_post_timed: LoadSample,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoadSample {
+    pub cpu_percent: Option<f64>,
+    pub load_1: Option<f64>,
+    pub load_5: Option<f64>,
+    pub load_15: Option<f64>,
+    pub processor_queue_length: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct Results {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prime_sieve_1t: Option<PrimeSieve1t>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prime_sieve_mt: Option<PrimeSieveMt>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrimeSieve1t {
+    pub iterations: Vec<PrimeIteration>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrimeSieveMt {
+    pub threads: u32,
+    pub iterations: Vec<PrimeIteration>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrimeIteration {
+    pub seconds: f64,
+    pub prime_count: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ErrorInfo {
+    pub kind: String,
+    pub message: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_host() -> HostInfo {
+        HostInfo {
+            hostname: "linux-perf-123".into(),
+            os_family: "linux".into(),
+            os_version: Some("Ubuntu 24.04".into()),
+            kernel_version: Some("6.8.0-xx".into()),
+            arch: "x86_64".into(),
+            logical_cpus: 32,
+            physical_cpus: Some(16),
+        }
+    }
+
+    fn sample_cpu() -> CpuInfo {
+        CpuInfo {
+            brand: Some("AMD EPYC ...".into()),
+            vendor: Some("AuthenticAMD".into()),
+            frequency_mhz: Some(3200),
+        }
+    }
+
+    #[test]
+    fn success_output_serializes_with_expected_top_level_keys() {
+        let out = Output {
+            schema_version: SCHEMA_VERSION,
+            collector_version: COLLECTOR_VERSION.into(),
+            cpu_suite_version: CPU_SUITE_VERSION.into(),
+            timestamp_utc: "2026-05-20T00:00:00Z".into(),
+            status: Status::Ok,
+            host: sample_host(),
+            cpu: sample_cpu(),
+            config: Some(Config {
+                command: "cpu".into(),
+                mode: "normal".into(),
+                prime_limit: 100_000_000,
+                iterations: 5,
+                threads: 32,
+                warmup_enabled: true,
+                warmup_prime_limit: Some(1_000_000),
+            }),
+            environment: Some(Environment {
+                load_pre_warmup: LoadSample {
+                    cpu_percent: Some(3.1),
+                    load_1: Some(0.42),
+                    load_5: Some(0.55),
+                    load_15: Some(0.61),
+                    processor_queue_length: None,
+                },
+                load_pre_timed: LoadSample {
+                    cpu_percent: Some(4.0),
+                    load_1: Some(0.48),
+                    load_5: Some(0.56),
+                    load_15: Some(0.61),
+                    processor_queue_length: None,
+                },
+                load_post_timed: LoadSample {
+                    cpu_percent: Some(99.6),
+                    load_1: Some(8.91),
+                    load_5: Some(2.10),
+                    load_15: Some(0.95),
+                    processor_queue_length: None,
+                },
+            }),
+            results: Some(Results {
+                prime_sieve_1t: Some(PrimeSieve1t {
+                    iterations: vec![PrimeIteration {
+                        seconds: 4.21,
+                        prime_count: 5_761_455,
+                    }],
+                }),
+                prime_sieve_mt: Some(PrimeSieveMt {
+                    threads: 32,
+                    iterations: vec![PrimeIteration {
+                        seconds: 0.41,
+                        prime_count: 5_761_455,
+                    }],
+                }),
+            }),
+            error: None,
+        };
+
+        let v: serde_json::Value = serde_json::to_value(&out).unwrap();
+        assert_eq!(v["schema_version"], 2);
+        assert_eq!(v["cpu_suite_version"], "cpu-v0");
+        assert_eq!(v["status"], "ok");
+        assert!(v.get("error").is_none(), "error must be omitted on success");
+        assert_eq!(v["environment"]["load_pre_warmup"]["cpu_percent"], 3.1);
+        assert_eq!(v["results"]["prime_sieve_mt"]["threads"], 32);
+    }
+
+    #[test]
+    fn failed_output_omits_results_and_environment() {
+        let out = Output {
+            schema_version: SCHEMA_VERSION,
+            collector_version: COLLECTOR_VERSION.into(),
+            cpu_suite_version: CPU_SUITE_VERSION.into(),
+            timestamp_utc: "2026-05-20T00:00:00Z".into(),
+            status: Status::Failed,
+            host: sample_host(),
+            cpu: sample_cpu(),
+            config: None,
+            environment: None,
+            results: None,
+            error: Some(ErrorInfo {
+                kind: "correctness_check_failed".into(),
+                message: "prime count mismatch".into(),
+            }),
+        };
+
+        let v: serde_json::Value = serde_json::to_value(&out).unwrap();
+        assert_eq!(v["status"], "failed");
+        assert_eq!(v["error"]["kind"], "correctness_check_failed");
+        assert!(v.get("results").is_none());
+        assert!(v.get("environment").is_none());
+        assert!(v.get("config").is_none());
+    }
+
+    #[test]
+    fn load_sample_emits_nulls_for_missing_fields() {
+        let s = LoadSample {
+            cpu_percent: Some(5.0),
+            load_1: None,
+            load_5: None,
+            load_15: None,
+            processor_queue_length: None,
+        };
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["cpu_percent"], 5.0);
+        assert!(v["load_1"].is_null());
+        assert!(v["processor_queue_length"].is_null());
+    }
+}
