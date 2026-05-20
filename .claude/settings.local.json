@@ -5,7 +5,8 @@
       "Bash(cargo --version)",
       "Bash(br update *)",
       "Bash(cargo build *)",
-      "Bash(cargo test *)"
+      "Bash(cargo test *)",
+      "Bash(br dep *)"
     ]
   }
 }
