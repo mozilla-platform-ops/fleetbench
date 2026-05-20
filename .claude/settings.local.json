@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(br create *)",
+      "Bash(cargo --version)",
+      "Bash(br update *)",
+      "Bash(cargo build *)"
+    ]
+  }
+}
