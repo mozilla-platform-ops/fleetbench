@@ -69,7 +69,7 @@ pub struct Environment {
     pub load_post_timed: LoadSample,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadSample {
     pub cpu_percent: Option<f64>,
     pub load_1: Option<f64>,

@@ -32,6 +32,9 @@ enum Command {
         threads: String,
         #[arg(long)]
         json: bool,
+        /// Skip the brief warmup run before timed iterations.
+        #[arg(long)]
+        no_warmup: bool,
     },
 }
 
@@ -46,8 +49,8 @@ fn main() {
     let cli = Cli::parse();
     let exit_code = match cli.command {
         Command::Inspect { json } => inspect::run(json),
-        Command::Cpu { mode, limit, iterations, threads, json } => {
-            cpu::run(mode, limit, iterations, &threads, json)
+        Command::Cpu { mode, limit, iterations, threads, json, no_warmup } => {
+            cpu::run(mode, limit, iterations, &threads, json, !no_warmup)
         }
     };
     std::process::exit(exit_code);

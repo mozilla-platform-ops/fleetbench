@@ -16,6 +16,8 @@ const EXIT_CORRECTNESS_FAILED: i32 = 2;
 const ERR_INVALID_ARGUMENTS: &str = "invalid_arguments";
 const ERR_CORRECTNESS_CHECK_FAILED: &str = "correctness_check_failed";
 
+const WARMUP_PRIME_LIMIT: u64 = 10_000_000;
+
 struct ModePreset {
     name: &'static str,
     prime_limit: u64,
@@ -36,6 +38,7 @@ pub fn run(
     iterations: Option<u32>,
     threads_arg: &str,
     json: bool,
+    warmup_enabled: bool,
 ) -> i32 {
     let mut sys = System::new();
     sys.refresh_cpu_all();
@@ -67,12 +70,34 @@ pub fn run(
         prime_limit,
         iterations: iter_count,
         threads,
-        warmup_enabled: false,
-        warmup_prime_limit: None,
+        warmup_enabled,
+        warmup_prime_limit: warmup_enabled.then_some(WARMUP_PRIME_LIMIT),
     };
 
     let load_pre_warmup = sample_load();
-    // Warmup will go between these two samples once .7 lands.
+
+    if warmup_enabled {
+        if let Err(err) = run_warmup(threads) {
+            let load_post_timed = sample_load();
+            let environment = Some(Environment {
+                load_pre_warmup,
+                load_pre_timed: load_post_timed.clone(),
+                load_post_timed,
+            });
+            let exit = exit_code_for(&err);
+            let out = build_output(
+                Status::Failed,
+                host,
+                cpu,
+                Some(config),
+                environment,
+                None,
+                Some(err),
+            );
+            return emit(json, &out, exit);
+        }
+    }
+
     let load_pre_timed = sample_load();
 
     let workload_result = run_workloads(prime_limit, iter_count, threads);
@@ -153,6 +178,12 @@ fn emit(json: bool, out: &Output, intended_exit: i32) -> i32 {
         print_human(out);
         intended_exit
     }
+}
+
+fn run_warmup(threads: u32) -> Result<(), ErrorInfo> {
+    sieve::run_1t(WARMUP_PRIME_LIMIT, 1)?;
+    sieve::run_mt(WARMUP_PRIME_LIMIT, 1, threads)?;
+    Ok(())
 }
 
 fn exit_code_for(err: &ErrorInfo) -> i32 {
