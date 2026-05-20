@@ -1,0 +1,19 @@
+[package]
+name = "fleetbench"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform CPU benchmark collector for performance-testing fleets"
+license = "MPL-2.0"
+
+[[bin]]
+name = "fleetbench"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

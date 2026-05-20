@@ -1,5 +1,9 @@
 <!-- br-agent-instructions-v1 -->
 
+## Commit Conventions
+
+- Do not add `Co-Authored-By` (or any other coauthor) lines to commit messages.
+
 ---
 
 ## Beads Workflow Integration
