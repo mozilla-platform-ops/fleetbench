@@ -3,13 +3,40 @@ use crate::schema::LoadSample;
 const SAMPLE_INTERVAL_MS: u64 = 100;
 
 pub fn sample_load() -> LoadSample {
+    let (load_1, load_5, load_15) = loadavg_sample();
     LoadSample {
         cpu_percent: cpu_percent_sample(),
-        load_1: None,
-        load_5: None,
-        load_15: None,
+        load_1,
+        load_5,
+        load_15,
         processor_queue_length: None,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn loadavg_sample() -> (Option<f64>, Option<f64>, Option<f64>) {
+    match std::fs::read_to_string("/proc/loadavg")
+        .ok()
+        .as_deref()
+        .and_then(parse_proc_loadavg)
+    {
+        Some((a, b, c)) => (Some(a), Some(b), Some(c)),
+        None => (None, None, None),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn loadavg_sample() -> (Option<f64>, Option<f64>, Option<f64>) {
+    (None, None, None)
+}
+
+fn parse_proc_loadavg(contents: &str) -> Option<(f64, f64, f64)> {
+    let line = contents.lines().next()?;
+    let mut parts = line.split_ascii_whitespace();
+    let a: f64 = parts.next()?.parse().ok()?;
+    let b: f64 = parts.next()?.parse().ok()?;
+    let c: f64 = parts.next()?.parse().ok()?;
+    Some((a, b, c))
 }
 
 #[cfg(target_os = "linux")]
@@ -115,17 +142,41 @@ mod tests {
     }
 
     #[test]
-    fn sample_load_returns_load_sample_struct() {
+    fn parses_proc_loadavg() {
+        let (a, b, c) = parse_proc_loadavg("0.42 0.55 0.61 1/234 56789\n").unwrap();
+        assert!((a - 0.42).abs() < 1e-9);
+        assert!((b - 0.55).abs() < 1e-9);
+        assert!((c - 0.61).abs() < 1e-9);
+    }
+
+    #[test]
+    fn parse_loadavg_rejects_short_lines() {
+        assert!(parse_proc_loadavg("0.42 0.55\n").is_none());
+        assert!(parse_proc_loadavg("").is_none());
+    }
+
+    #[test]
+    fn parse_loadavg_rejects_garbage() {
+        assert!(parse_proc_loadavg("a b c 1/1 1\n").is_none());
+    }
+
+    #[test]
+    fn sample_load_platform_expectations() {
         let s = sample_load();
-        // load_1/5/15/proc_queue_len intentionally unimplemented in this task
-        assert!(s.load_1.is_none());
-        assert!(s.load_5.is_none());
-        assert!(s.load_15.is_none());
         assert!(s.processor_queue_length.is_none());
-        // cpu_percent populated on Linux, None elsewhere
         #[cfg(target_os = "linux")]
-        assert!(s.cpu_percent.is_some());
+        {
+            assert!(s.cpu_percent.is_some());
+            assert!(s.load_1.is_some());
+            assert!(s.load_5.is_some());
+            assert!(s.load_15.is_some());
+        }
         #[cfg(not(target_os = "linux"))]
-        assert!(s.cpu_percent.is_none());
+        {
+            assert!(s.cpu_percent.is_none());
+            assert!(s.load_1.is_none());
+            assert!(s.load_5.is_none());
+            assert!(s.load_15.is_none());
+        }
     }
 }
