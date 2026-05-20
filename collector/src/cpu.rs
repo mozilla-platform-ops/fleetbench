@@ -16,7 +16,7 @@ const EXIT_CORRECTNESS_FAILED: i32 = 2;
 const ERR_INVALID_ARGUMENTS: &str = "invalid_arguments";
 const ERR_CORRECTNESS_CHECK_FAILED: &str = "correctness_check_failed";
 
-const WARMUP_PRIME_LIMIT: u64 = 10_000_000;
+const WARMUP_PRIME_LIMIT: u64 = 100_000_000;
 
 struct ModePreset {
     name: &'static str,
