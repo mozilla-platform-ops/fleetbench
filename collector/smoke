@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""End-to-end smoke: build static musl binary, scp to a Linux host, run validation.
+
+Usage:
+  ./smoke <host>
+  ./smoke <host> --runs 5
+  ./smoke <host> --runs 5 --mode quick
+  ./smoke <host> --no-build
+
+Requires locally: zig, cargo-zigbuild, x86_64-unknown-linux-musl rustup target.
+Requires on target: write access to ~.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shlex
+import statistics
+import subprocess
+import sys
+from pathlib import Path
+
+TARGET = "x86_64-unknown-linux-musl"
+BIN_LOCAL = Path(f"target/{TARGET}/release/fleetbench")
+BIN_REMOTE = "~/fleetbench"
+EXPECTED_PRIME_COUNTS = {
+    10_000_000: 664_579,
+    100_000_000: 5_761_455,
+    1_000_000_000: 50_847_534,
+}
+
+
+def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    print(f"$ {' '.join(shlex.quote(c) for c in cmd)}", file=sys.stderr)
+    return subprocess.run(cmd, check=True, **kw)
+
+
+def ssh_run(host: str, remote_cmd: str, capture: bool = False) -> str:
+    cp = run(["ssh", host, remote_cmd], capture_output=capture, text=capture)
+    return cp.stdout if capture else ""
+
+
+def build() -> None:
+    run(["cargo", "zigbuild", "--release", "--target", TARGET])
+    if not BIN_LOCAL.exists():
+        sys.exit(f"build did not produce {BIN_LOCAL}")
+    sz = BIN_LOCAL.stat().st_size
+    print(f"  built: {BIN_LOCAL}  ({sz/1024/1024:.1f} MB)")
+
+
+def scp_binary(host: str) -> None:
+    run(["scp", "-q", str(BIN_LOCAL), f"{host}:{BIN_REMOTE}"])
+    ssh_run(host, f"chmod +x {BIN_REMOTE}")
+
+
+def validate_envelope(d: dict, mode: str) -> None:
+    required_top = [
+        "schema_version", "collector_version", "cpu_suite_version",
+        "timestamp_utc", "status", "host", "cpu", "config", "environment", "results",
+    ]
+    missing = [k for k in required_top if k not in d]
+    if missing:
+        raise AssertionError(f"missing top-level keys: {missing}")
+    assert d["schema_version"] == 2, f"schema_version={d['schema_version']}"
+    assert d["cpu_suite_version"] == "cpu-v0"
+    assert d["status"] == "ok", f"status={d['status']}"
+    env = d["environment"]
+    for slot in ("load_pre_warmup", "load_pre_timed", "load_post_timed"):
+        s = env[slot]
+        assert s["cpu_percent"] is not None, f"cpu_percent null in {slot}"
+        assert s["load_1"] is not None, f"load_1 null in {slot}"
+    expected = EXPECTED_PRIME_COUNTS[d["config"]["prime_limit"]]
+    for name in ("prime_sieve_1t", "prime_sieve_mt"):
+        r = d["results"][name]
+        assert len(r["iterations"]) == d["config"]["iterations"]
+        counts = {it["prime_count"] for it in r["iterations"]}
+        assert counts == {expected}, f"{name} prime_count: {counts} != {expected}"
+
+
+def fetch_run(host: str, mode: str) -> dict:
+    out = ssh_run(host, f"{BIN_REMOTE} cpu --mode {mode} --json", capture=True)
+    return json.loads(out)
+
+
+def stats(samples: list[float]) -> str:
+    if not samples:
+        return "(no samples)"
+    mn, mx = min(samples), max(samples)
+    med = statistics.median(samples)
+    mean = statistics.mean(samples)
+    return f"min={mn*1000:6.1f}ms  med={med*1000:6.1f}ms  mean={mean*1000:6.1f}ms  max={mx*1000:6.1f}ms  n={len(samples)}"
+
+
+def summarize(label: str, runs: list[dict], workload: str) -> None:
+    iter_0 = [r["results"][workload]["iterations"][0]["seconds"] for r in runs]
+    iter_rest = [
+        it["seconds"]
+        for r in runs
+        for it in r["results"][workload]["iterations"][1:]
+    ]
+    print(f"  {label} {workload} iter 0   {stats(iter_0)}")
+    print(f"  {label} {workload} iter 1+  {stats(iter_rest)}")
+    if iter_0 and iter_rest:
+        ratio = statistics.median(iter_0) / statistics.median(iter_rest)
+        print(f"  {label} {workload} iter0/rest median ratio: {ratio:.2f}x")
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("host", help="ssh destination")
+    p.add_argument("--runs", type=int, default=1, help="number of benchmark runs (default 1)")
+    p.add_argument("--mode", default="quick", choices=["quick", "normal", "long"],
+                   help="cpu mode for the repeated runs (default quick)")
+    p.add_argument("--no-build", action="store_true", help="skip cargo zigbuild")
+    p.add_argument("--no-scp", action="store_true", help="skip scp (assume binary already on host)")
+    args = p.parse_args()
+
+    print("=== build ===")
+    if args.no_build:
+        print("  skipped")
+    else:
+        build()
+
+    print(f"\n=== scp -> {args.host}:{BIN_REMOTE} ===")
+    if args.no_scp:
+        print("  skipped")
+    else:
+        scp_binary(args.host)
+
+    print(f"\n=== inspect on {args.host} ===")
+    print(ssh_run(args.host, f"{BIN_REMOTE} inspect", capture=True))
+
+    print(f"=== cpu --mode {args.mode} x {args.runs} ===")
+    runs: list[dict] = []
+    for i in range(args.runs):
+        d = fetch_run(args.host, args.mode)
+        validate_envelope(d, args.mode)
+        st = [f"{x['seconds']*1000:.1f}" for x in d["results"]["prime_sieve_1t"]["iterations"]]
+        mt = [f"{x['seconds']*1000:.1f}" for x in d["results"]["prime_sieve_mt"]["iterations"]]
+        print(f"  run {i+1:>3}: 1t={st} ms  mt={mt} ms")
+        runs.append(d)
+
+    if args.runs > 1:
+        print(f"\n=== aggregate over {args.runs} runs ({args.mode}) ===")
+        summarize(args.mode, runs, "prime_sieve_1t")
+        summarize(args.mode, runs, "prime_sieve_mt")
+
+    print(f"\n=== failure path: cpu --threads 0 --json ===")
+    cp = subprocess.run(
+        ["ssh", args.host, f"{BIN_REMOTE} cpu --threads 0 --json"],
+        capture_output=True, text=True,
+    )
+    if cp.returncode != 1:
+        sys.exit(f"expected exit 1 from --threads 0, got {cp.returncode}")
+    err = json.loads(cp.stdout)
+    assert err["status"] == "failed"
+    assert err["error"]["kind"] == "invalid_arguments"
+    print(f"  OK: status=failed kind={err['error']['kind']}")
+
+    print("\n=== ALL SMOKE CHECKS PASSED ===")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
