@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Sequence
 
 from fleetbench_run import __version__
 from fleetbench_run.duration import DurationParseError, parse_duration
+from fleetbench_run.orchestrate import perform_run
+from fleetbench_run.throttle import decide
 
 
 def _duration_arg(s: str):
@@ -80,9 +84,36 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    print(f"fleetbench-run: not yet implemented", file=sys.stderr)
-    print(f"  parsed args: {vars(args)}", file=sys.stderr)
-    return 1
+
+    results_dir = Path(args.results_dir)
+    decision = decide(datetime.now(timezone.utc), results_dir, args.min_interval)
+    if not decision.should_run:
+        print(f"throttled: {decision.reason}")
+        return 0
+    print(f"running: {decision.reason}")
+
+    # Activity pre-flight (gwhc) lands in runner task .11.
+    if not args.skip_activity_check:
+        pass
+
+    envelope, final_path = perform_run(
+        results_dir=results_dir,
+        mode=args.mode,
+        collector_binary=args.collector_binary,
+        trigger=args.trigger,
+        timeout=args.timeout,
+    )
+
+    if envelope.collector_output is None:
+        print(
+            f"wrote failure envelope: {final_path} "
+            f"(exit_code={envelope.collector_exit_code}, "
+            f"killed_by_runner={envelope.collector_killed_by_runner})",
+            file=sys.stderr,
+        )
+    else:
+        print(f"wrote envelope: {final_path}")
+    return 0
 
 
 if __name__ == "__main__":
