@@ -103,7 +103,7 @@ pub struct PrimeIteration {
     pub prime_count: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorInfo {
     pub kind: String,
     pub message: String,
