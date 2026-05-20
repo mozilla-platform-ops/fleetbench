@@ -1,9 +1,10 @@
 use sysinfo::System;
 
+use crate::env::sample_load;
 use crate::inspect::{collect_cpu, collect_host, current_timestamp_utc};
 use crate::schema::{
-    Config, ErrorInfo, Output, PrimeSieve1t, PrimeSieveMt, Results, Status, COLLECTOR_VERSION,
-    CPU_SUITE_VERSION, SCHEMA_VERSION,
+    Config, Environment, ErrorInfo, Output, PrimeSieve1t, PrimeSieveMt, Results, Status,
+    COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
 };
 use crate::sieve;
 use crate::Mode;
@@ -57,10 +58,17 @@ pub fn run(
         warmup_prime_limit: None,
     };
 
+    let load_pre_warmup = sample_load();
+    // Warmup will go between these two samples once .7 lands.
+    let load_pre_timed = sample_load();
+
     let (status, results, error) = match run_workloads(prime_limit, iter_count, threads) {
         Ok(r) => (Status::Ok, Some(r), None),
         Err(e) => (Status::Failed, None, Some(e)),
     };
+
+    let load_post_timed = sample_load();
+    let environment = Some(Environment { load_pre_warmup, load_pre_timed, load_post_timed });
 
     let out = Output {
         schema_version: SCHEMA_VERSION,
@@ -71,7 +79,7 @@ pub fn run(
         host,
         cpu,
         config: Some(config),
-        environment: None,
+        environment,
         results,
         error: error.clone(),
     };

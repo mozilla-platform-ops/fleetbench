@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 mod cpu;
+mod env;
 mod inspect;
 mod schema;
 mod sieve;
