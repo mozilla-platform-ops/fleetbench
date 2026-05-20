@@ -11,6 +11,14 @@ import sys
 from typing import Sequence
 
 from fleetbench_run import __version__
+from fleetbench_run.duration import DurationParseError, parse_duration
+
+
+def _duration_arg(s: str):
+    try:
+        return parse_duration(s)
+    except DurationParseError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,7 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--min-interval",
-        default="24h",
+        type=_duration_arg,
+        default=parse_duration("24h"),
         help=(
             "minimum elapsed time since the last envelope before running again. "
             "Soft lower bound; actual cadence is gated by invocation frequency. "
@@ -62,7 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--timeout",
-        default="10m",
+        type=_duration_arg,
+        default=parse_duration("10m"),
         help="hard timeout for the collector subprocess (default: 10m)",
     )
     return p

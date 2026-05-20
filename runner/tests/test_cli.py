@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 
 from fleetbench_run.cli import build_parser
@@ -24,10 +26,10 @@ def test_minimal_invocation_parses():
     assert args.results_dir == "/tmp/x"
     assert args.mode == "normal"
     assert args.collector_binary == "fleetbench"
-    assert args.min_interval == "24h"
+    assert args.min_interval == timedelta(hours=24)
     assert args.skip_activity_check is False
     assert args.trigger == "boot"
-    assert args.timeout == "10m"
+    assert args.timeout == timedelta(minutes=10)
 
 
 def test_all_flags_parse():
@@ -43,10 +45,10 @@ def test_all_flags_parse():
     ])
     assert args.mode == "quick"
     assert args.collector_binary == "/usr/local/bin/fleetbench"
-    assert args.min_interval == "1h"
+    assert args.min_interval == timedelta(hours=1)
     assert args.skip_activity_check is True
     assert args.trigger == "manual"
-    assert args.timeout == "5m"
+    assert args.timeout == timedelta(minutes=5)
 
 
 def test_mode_rejects_invalid_value():
@@ -59,3 +61,17 @@ def test_trigger_rejects_invalid_value():
     parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["--results-dir", "/tmp/x", "--trigger", "cron"])
+
+
+def test_min_interval_rejects_bad_duration():
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--results-dir", "/tmp/x", "--min-interval", "1y"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--results-dir", "/tmp/x", "--min-interval", "1.5h"])
+
+
+def test_timeout_rejects_bad_duration():
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--results-dir", "/tmp/x", "--timeout", "lots"])
