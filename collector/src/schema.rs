@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 pub const COLLECTOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const CPU_SUITE_VERSION: &str = "cpu-v0";
 
@@ -71,11 +71,25 @@ pub struct Environment {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadSample {
-    pub cpu_percent: Option<f64>,
+    pub cpu_counters: Option<CpuCounters>,
     pub load_1: Option<f64>,
     pub load_5: Option<f64>,
     pub load_15: Option<f64>,
     pub processor_queue_length: Option<u32>,
+}
+
+/// Raw CPU time counters captured at a single point in time. Differencing two
+/// snapshots over a window yields CPU utilization for that window.
+///
+/// Units differ per platform; `kind` identifies which to use:
+///   "linux_proc_stat":         jiffies (typically 1/100 s × logical CPU)
+///   "windows_get_system_times": 100-ns intervals × logical CPU
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CpuCounters {
+    pub kind: String,
+    pub idle_units: u64,
+    pub iowait_units: Option<u64>,
+    pub total_units: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -154,21 +168,36 @@ mod tests {
             }),
             environment: Some(Environment {
                 load_pre_warmup: LoadSample {
-                    cpu_percent: Some(3.1),
+                    cpu_counters: Some(CpuCounters {
+                        kind: "linux_proc_stat".into(),
+                        idle_units: 1_000_000,
+                        iowait_units: Some(50),
+                        total_units: 1_100_000,
+                    }),
                     load_1: Some(0.42),
                     load_5: Some(0.55),
                     load_15: Some(0.61),
                     processor_queue_length: None,
                 },
                 load_pre_timed: LoadSample {
-                    cpu_percent: Some(4.0),
+                    cpu_counters: Some(CpuCounters {
+                        kind: "linux_proc_stat".into(),
+                        idle_units: 1_000_100,
+                        iowait_units: Some(50),
+                        total_units: 1_100_300,
+                    }),
                     load_1: Some(0.48),
                     load_5: Some(0.56),
                     load_15: Some(0.61),
                     processor_queue_length: None,
                 },
                 load_post_timed: LoadSample {
-                    cpu_percent: Some(99.6),
+                    cpu_counters: Some(CpuCounters {
+                        kind: "linux_proc_stat".into(),
+                        idle_units: 1_000_100,
+                        iowait_units: Some(50),
+                        total_units: 1_200_300,
+                    }),
                     load_1: Some(8.91),
                     load_5: Some(2.10),
                     load_15: Some(0.95),
@@ -194,11 +223,12 @@ mod tests {
         };
 
         let v: serde_json::Value = serde_json::to_value(&out).unwrap();
-        assert_eq!(v["schema_version"], 2);
+        assert_eq!(v["schema_version"], 3);
         assert_eq!(v["cpu_suite_version"], "cpu-v0");
         assert_eq!(v["status"], "ok");
         assert!(v.get("error").is_none(), "error must be omitted on success");
-        assert_eq!(v["environment"]["load_pre_warmup"]["cpu_percent"], 3.1);
+        assert_eq!(v["environment"]["load_pre_warmup"]["cpu_counters"]["kind"], "linux_proc_stat");
+        assert_eq!(v["environment"]["load_pre_warmup"]["cpu_counters"]["idle_units"], 1_000_000);
         assert_eq!(v["results"]["prime_sieve_mt"]["threads"], 32);
     }
 
@@ -232,14 +262,20 @@ mod tests {
     #[test]
     fn load_sample_emits_nulls_for_missing_fields() {
         let s = LoadSample {
-            cpu_percent: Some(5.0),
+            cpu_counters: Some(CpuCounters {
+                kind: "linux_proc_stat".into(),
+                idle_units: 1000,
+                iowait_units: Some(5),
+                total_units: 1500,
+            }),
             load_1: None,
             load_5: None,
             load_15: None,
             processor_queue_length: None,
         };
         let v = serde_json::to_value(&s).unwrap();
-        assert_eq!(v["cpu_percent"], 5.0);
+        assert_eq!(v["cpu_counters"]["kind"], "linux_proc_stat");
+        assert_eq!(v["cpu_counters"]["idle_units"], 1000);
         assert!(v["load_1"].is_null());
         assert!(v["processor_queue_length"].is_null());
     }

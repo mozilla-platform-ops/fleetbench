@@ -62,13 +62,16 @@ def validate_envelope(d: dict, mode: str) -> None:
     missing = [k for k in required_top if k not in d]
     if missing:
         raise AssertionError(f"missing top-level keys: {missing}")
-    assert d["schema_version"] == 2, f"schema_version={d['schema_version']}"
+    assert d["schema_version"] == 3, f"schema_version={d['schema_version']}"
     assert d["cpu_suite_version"] == "cpu-v0"
     assert d["status"] == "ok", f"status={d['status']}"
     env = d["environment"]
     for slot in ("load_pre_warmup", "load_pre_timed", "load_post_timed"):
         s = env[slot]
-        assert s["cpu_percent"] is not None, f"cpu_percent null in {slot}"
+        cc = s["cpu_counters"]
+        assert cc is not None, f"cpu_counters null in {slot}"
+        assert cc["kind"] == "linux_proc_stat", f"counter kind in {slot}: {cc['kind']}"
+        assert cc["total_units"] > cc["idle_units"], f"counters wrong in {slot}: {cc}"
         assert s["load_1"] is not None, f"load_1 null in {slot}"
     expected = EXPECTED_PRIME_COUNTS[d["config"]["prime_limit"]]
     for name in ("prime_sieve_1t", "prime_sieve_mt"):

@@ -73,11 +73,11 @@ The pre-warmup sample captures the host's idle state. The pre-timed sample captu
 
 Each sample contains:
 
-- `cpu_percent`: short-interval CPU utilization, populated on both platforms. On Linux, computed by reading `/proc/stat` twice ~100 ms apart and differencing the idle/total jiffies. On Windows, computed by calling `GetSystemTimes()` twice ~100 ms apart and differencing the idle/kernel/user tick counts. This is the load signal that exists on both platforms; analysis should prefer it for cross-platform comparisons.
+- `cpu_counters`: a single-point-in-time snapshot of cumulative CPU time counters. Differencing two snapshots over a window yields CPU utilization for that window. On Linux, read from `/proc/stat` (kind `"linux_proc_stat"`, jiffies). On Windows, read from `GetSystemTimes` (kind `"windows_get_system_times"`, 100-ns intervals). `null` if unavailable on the running platform. Fields: `kind`, `idle_units`, `iowait_units` (Linux-only, `null` on Windows), `total_units`.
 - `load_1`, `load_5`, `load_15`: Linux-only, from `getloadavg(3)` or `/proc/loadavg`. `null` on Windows.
-- `processor_queue_length`: Windows-only, optional. `null` on Linux, and also `null` on Windows if not cheaply obtainable. Not required for v2.
+- `processor_queue_length`: Windows-only, optional. `null` on Linux, and also `null` on Windows if not cheaply obtainable.
 
-Sampling is cheap (~100 ms per sample point), requires no privileges, and adds negligible runtime overhead.
+Sampling is cheap (single file read or syscall, no sleep), requires no privileges, and adds no measurable runtime overhead. An earlier iteration computed `cpu_percent` directly by sleeping ~100 ms between two `/proc/stat` reads inside the collector; that approach was dropped because the idle sleeps between warmup and timed iterations let the CPU governor down-clock, producing a consistent first-iteration penalty in the timed phase. Raw counter snapshots avoid this side effect and follow the "raw data first" design principle: any rate-over-window calculation is a pure function of the stored snapshots and can be recomputed downstream without re-running the fleet.
 
 ### JSON additions
 
@@ -87,17 +87,26 @@ A new `environment` block appears alongside `host`, `cpu`, `config`, and `result
 {
   "environment": {
     "load_pre_warmup": {
-      "cpu_percent": 3.1,
+      "cpu_counters": {
+        "kind": "linux_proc_stat",
+        "idle_units": 1827451, "iowait_units": 9382, "total_units": 2249341
+      },
       "load_1": 0.42, "load_5": 0.55, "load_15": 0.61,
       "processor_queue_length": null
     },
     "load_pre_timed": {
-      "cpu_percent": 4.0,
+      "cpu_counters": {
+        "kind": "linux_proc_stat",
+        "idle_units": 1827612, "iowait_units": 9384, "total_units": 2249720
+      },
       "load_1": 0.48, "load_5": 0.56, "load_15": 0.61,
       "processor_queue_length": null
     },
     "load_post_timed": {
-      "cpu_percent": 99.6,
+      "cpu_counters": {
+        "kind": "linux_proc_stat",
+        "idle_units": 1827648, "iowait_units": 9384, "total_units": 2258140
+      },
       "load_1": 8.91, "load_5": 2.10, "load_15": 0.95,
       "processor_queue_length": null
     }
@@ -109,7 +118,7 @@ Fields that cannot be obtained on a given platform are emitted as `null` rather 
 
 ### Schema version bump
 
-Adding `environment` is a backward-compatible addition. The schema version remains `1` for v0 results that lack the field; new emissions set `schema_version = 2` and always include `environment`, even if all fields inside it are `null`.
+Adding `environment` is a backward-compatible addition. The schema version remains `1` for v0 results that lack the field; emissions with the original `cpu_percent`-style environment block use `schema_version = 2`. The current shape uses `schema_version = 3`, which replaces `cpu_percent` with the raw `cpu_counters` snapshot per the rationale above.
 
 ## Python Runner
 
