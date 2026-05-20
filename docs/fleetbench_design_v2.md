@@ -71,11 +71,13 @@ The collector samples system load at three points: before warmup, after warmup b
 
 The pre-warmup sample captures the host's idle state. The pre-timed sample captures conditions immediately before measurement begins. The delta between them is itself a useful signal (for example, warmup ramped the CPU and pulled in unrelated work).
 
-On Linux, this is the standard 1/5/15-minute load average from `getloadavg(3)` or `/proc/loadavg`.
+Each sample contains:
 
-On Windows, there is no direct equivalent. v2 reports the Windows fields as `null` and adds a `processor_queue_length` field when it can be cheaply obtained; otherwise that field is also `null`. The schema accommodates both without changing.
+- `cpu_percent`: short-interval CPU utilization, populated on both platforms. On Linux, computed by reading `/proc/stat` twice ~100 ms apart and differencing the idle/total jiffies. On Windows, computed by calling `GetSystemTimes()` twice ~100 ms apart and differencing the idle/kernel/user tick counts. This is the load signal that exists on both platforms; analysis should prefer it for cross-platform comparisons.
+- `load_1`, `load_5`, `load_15`: Linux-only, from `getloadavg(3)` or `/proc/loadavg`. `null` on Windows.
+- `processor_queue_length`: Windows-only, optional. `null` on Linux, and also `null` on Windows if not cheaply obtainable. Not required for v2.
 
-Sampling load is cheap, requires no privileges, and adds no measurable runtime overhead.
+Sampling is cheap (~100 ms per sample point), requires no privileges, and adds negligible runtime overhead.
 
 ### JSON additions
 
@@ -85,14 +87,17 @@ A new `environment` block appears alongside `host`, `cpu`, `config`, and `result
 {
   "environment": {
     "load_pre_warmup": {
+      "cpu_percent": 3.1,
       "load_1": 0.42, "load_5": 0.55, "load_15": 0.61,
       "processor_queue_length": null
     },
     "load_pre_timed": {
+      "cpu_percent": 4.0,
       "load_1": 0.48, "load_5": 0.56, "load_15": 0.61,
       "processor_queue_length": null
     },
     "load_post_timed": {
+      "cpu_percent": 99.6,
       "load_1": 8.91, "load_5": 2.10, "load_15": 0.95,
       "processor_queue_length": null
     }
@@ -152,17 +157,22 @@ If the collector crashes hard — non-JSON stdout, panic, segfault, killed by si
 ```json
 {
   "collector_exit_code": -11,
-  "collector_signal": "SIGSEGV",
   "collector_output": null,
   "collector_stdout_raw": "...",
   "collector_stderr": "thread 'main' panicked at ...",
-  "collector_output_parse_error": "expected value at line 1 column 1"
+  "collector_output_parse_error": "expected value at line 1 column 1",
+  "collector_killed_by_runner": false
 }
 ```
 
-`collector_stderr` and `collector_stdout_raw` are truncated to 16 KB each. `collector_signal` is `null` on normal exits. This guarantees every scheduled run produces exactly one file, and broken collectors are visible downstream.
+`collector_stdout_raw` and `collector_stderr` are truncated to 16 KB each. `collector_exit_code` is the raw integer the OS reports — negative signal-derived values on Linux, the unmodified process exit code (or NTSTATUS-derived value) on Windows. The runner does not normalize these into signal names; analysis can interpret per-platform. This guarantees every scheduled run produces exactly one file, and broken collectors are visible downstream.
 
-The runner also enforces a hard timeout (default 10 minutes) as a backstop against a hung collector. On timeout it kills the process group and writes an envelope with `collector_signal: "SIGKILL"` and `collector_exit_code: null`.
+The runner enforces a hard timeout (default 10 minutes) as a backstop against a hung collector. On timeout the runner writes an envelope with `collector_killed_by_runner: true` and whatever exit code the OS returned after the kill.
+
+To ensure the kill actually terminates the collector and any descendants:
+
+- On Linux, the collector is launched in its own process group (`os.setsid`) and the runner sends `SIGKILL` to the group.
+- On Windows, the collector is launched inside a Job Object configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Killing the job terminates the collector and any child processes atomically. This requires `pywin32` or a small ctypes wrapper; v0 of the collector spawns no children, but the Job Object is set up from day one so later workloads cannot orphan processes.
 
 ### Results directory layout
 
@@ -253,6 +263,7 @@ These were open in v1 and are settled for v0/v1 implementation:
 - Should the envelope record the scheduling source (systemd unit name, cron line, task name) when discoverable? Useful for debugging missed runs.
 - On Windows, is `processor_queue_length` worth the implementation cost in v2, or should both load fields simply be `null` until there is a concrete analysis use for them?
 - Should the results directory include a `latest.json` symlink/copy for easy local inspection? Convenient but adds a write-ordering concern.
+- Is CPython already installed on the Windows performance hosts? If not, the runner needs to ship as a frozen executable (PyInstaller) or be ported to Rust. Porting the runner to Rust is acceptable if needed — the component split stands regardless of language.
 
 ## Milestones
 
