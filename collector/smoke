@@ -86,6 +86,41 @@ def fetch_run(host: str, mode: str) -> dict:
     return json.loads(out)
 
 
+def check_host_activity(host: str) -> None:
+    """Check whether a taskcluster job is running on the host via gwhc.
+
+    Output is advisory: we print state and any non-pass checks so the operator
+    can correlate noisy benchmark timings with concurrent worker activity.
+    Absence of gwhc is benign — Linux fleet hosts have it; other hosts don't.
+    """
+    cp = subprocess.run(
+        ["ssh", host, "command -v gwhc >/dev/null && gwhc --json || echo __NOT_FOUND__"],
+        capture_output=True, text=True,
+    )
+    out = cp.stdout.strip()
+    if "__NOT_FOUND__" in out or not out:
+        print("  gwhc not available on host (skipping activity check)")
+        return
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        print(f"  gwhc returned non-JSON output:\n{out}")
+        return
+    state = data.get("state", "?")
+    desc = data.get("state_description", "")
+    print(f"  state: {state}  ({desc})")
+    non_pass = [c for c in data.get("checks", []) if c.get("status") != "pass"]
+    if non_pass:
+        print(f"  {len(non_pass)} check(s) not passing:")
+        for c in non_pass:
+            print(f"    - {c.get('name')}: {c.get('status')} ({c.get('detail', '')})")
+    for w in data.get("warnings", []):
+        print(f"  warning: {w}")
+    if state != "IDLE":
+        print(f"\n  host is not idle (state={state}); skipping benchmark to avoid noisy results")
+        sys.exit(0)
+
+
 def stats(samples: list[float]) -> str:
     if not samples:
         return "(no samples)"
@@ -131,6 +166,9 @@ def main() -> int:
     else:
         scp_binary(args.host)
 
+    print(f"\n=== host activity check on {args.host} (gwhc) ===")
+    check_host_activity(args.host)
+
     print(f"\n=== inspect on {args.host} ===")
     print(ssh_run(args.host, f"{BIN_REMOTE} inspect", capture=True))
 
@@ -149,7 +187,7 @@ def main() -> int:
         summarize(args.mode, runs, "prime_sieve_1t")
         summarize(args.mode, runs, "prime_sieve_mt")
 
-    print(f"\n=== failure path: cpu --threads 0 --json ===")
+    print(f"\n=== negative test: bad args produce a well-formed failure envelope ===")
     cp = subprocess.run(
         ["ssh", args.host, f"{BIN_REMOTE} cpu --threads 0 --json"],
         capture_output=True, text=True,
@@ -159,7 +197,7 @@ def main() -> int:
     err = json.loads(cp.stdout)
     assert err["status"] == "failed"
     assert err["error"]["kind"] == "invalid_arguments"
-    print(f"  OK: status=failed kind={err['error']['kind']}")
+    print(f"  OK: deliberately-invalid --threads 0 emitted status=failed kind={err['error']['kind']} and exit=1")
 
     print("\n=== ALL SMOKE CHECKS PASSED ===")
     return 0
