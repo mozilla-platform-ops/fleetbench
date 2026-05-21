@@ -13,18 +13,18 @@ pub fn sample_load() -> LoadSample {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn cpu_counters_snapshot() -> Option<CpuCounters> {
     let s = std::fs::read_to_string("/proc/stat").ok()?;
     parse_proc_stat_counters(&s)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 fn cpu_counters_snapshot() -> Option<CpuCounters> {
     None
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn loadavg_sample() -> (Option<f64>, Option<f64>, Option<f64>) {
     match std::fs::read_to_string("/proc/loadavg")
         .ok()
@@ -36,7 +36,7 @@ fn loadavg_sample() -> (Option<f64>, Option<f64>, Option<f64>) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 fn loadavg_sample() -> (Option<f64>, Option<f64>, Option<f64>) {
     (None, None, None)
 }
@@ -144,7 +144,7 @@ mod tests {
     fn sample_load_platform_expectations() {
         let s = sample_load();
         assert!(s.processor_queue_length.is_none());
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         {
             let c = s.cpu_counters.expect("linux populates cpu_counters");
             assert_eq!(c.kind, "linux_proc_stat");
@@ -153,7 +153,7 @@ mod tests {
             assert!(s.load_5.is_some());
             assert!(s.load_15.is_some());
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
         {
             assert!(s.cpu_counters.is_none());
             assert!(s.load_1.is_none());
