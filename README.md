@@ -27,6 +27,16 @@ the collected envelope files.
 | Collector | shipped | binary cross-compiles, env sampling fields are null pending implementation | shipped (env block intentionally null — no `/proc` on Darwin) | shipped (env block populated; same `/proc/stat` + `/proc/loadavg` path as Linux) |
 | Runner    | shipped | deferred pending CPython availability question | works (dev) | not applicable — Android deploy model is different |
 
+### Choosing a mode
+
+`normal` (pi(10⁸), 5 iterations) targets ~150 ms per iteration on slow-x86 fleet
+hosts (Xeon E3-class), which is where signal quality matters most. On much
+faster hardware — M-class Macs, modern workstations — per-iteration timing
+drops to ~90 ms, which is below the ~100 ms noise floor for tight outlier
+detection. Use `--mode long` (pi(10⁹), 3 iterations) on hardware that fast
+to keep iterations comfortably above the noise floor. Slow phones and old
+fleet hardware are well-served by `normal`.
+
 Verified end-to-end:
 - **Linux**: smoke-tested on real fleet hosts (Xeon E3-1585L v5).
 - **macOS**: dev box (Apple Silicon M4 Pro); pi(10⁹) 1t in ~840 ms, mt in ~118 ms across 14 cores.
