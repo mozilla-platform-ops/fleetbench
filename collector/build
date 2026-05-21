@@ -43,17 +43,24 @@ TARGETS = {
 }
 
 
-def run(cmd: list[str]) -> None:
-    print(f"$ {' '.join(shlex.quote(c) for c in cmd)}", file=sys.stderr)
-    subprocess.run(cmd, check=True)
+def run_quiet(cmd: list[str]) -> None:
+    """Run a command, suppressing output unless it fails."""
+    cp = subprocess.run(cmd, capture_output=True, text=True)
+    if cp.returncode != 0:
+        print(f"$ {' '.join(shlex.quote(c) for c in cmd)}", file=sys.stderr)
+        if cp.stdout:
+            sys.stderr.write(cp.stdout)
+        if cp.stderr:
+            sys.stderr.write(cp.stderr)
+        sys.exit(cp.returncode)
 
 
 def build(platform: str) -> Path:
     rust_target, binary, builder = TARGETS[platform]
     if builder == "zigbuild":
-        run(["cargo", "zigbuild", "--release", "--target", rust_target])
+        run_quiet(["cargo", "zigbuild", "--release", "--target", rust_target])
     else:
-        run(["cargo", "build", "--release", "--target", rust_target])
+        run_quiet(["cargo", "build", "--release", "--target", rust_target])
     out = Path(f"target/{rust_target}/release/{binary}")
     if not out.exists():
         sys.exit(f"build did not produce {out}")
