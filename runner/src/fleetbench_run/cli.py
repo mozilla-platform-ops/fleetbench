@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Sequence
 
 from fleetbench_run import __version__
+from fleetbench_run.activity import check_activity
 from fleetbench_run.duration import DurationParseError, parse_duration
 from fleetbench_run.orchestrate import perform_run
 from fleetbench_run.throttle import decide
@@ -92,9 +93,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     print(f"running: {decision.reason}")
 
-    # Activity pre-flight (gwhc) lands in runner task .11.
     if not args.skip_activity_check:
-        pass
+        activity = check_activity()
+        if not activity.should_proceed:
+            print(f"activity check: {activity.reason}")
+            return 0
+        print(f"activity check: {activity.reason}")
 
     envelope, final_path = perform_run(
         results_dir=results_dir,
