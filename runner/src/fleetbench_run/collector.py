@@ -2,15 +2,21 @@
 
 This module owns the mechanics of calling the fleetbench collector binary and
 capturing its output. It does not parse the JSON or wrap the result in an
-envelope — that lives in the orchestration layer.
+envelope.
 
-The current implementation uses subprocess.run with a wall-clock timeout. The
-process-group SIGKILL machinery promised by the design (runner task .7) lands
-on top of this; until then the timeout kills the direct child only.
+Timeout behavior on POSIX: the collector is launched in its own session
+(``os.setsid``) so that it and any descendants share a process group. On
+timeout the runner sends SIGKILL to that group, guaranteeing descendants die
+along with the direct child. On Windows (where ``os.setsid`` is unavailable)
+we fall back to a single-process kill via ``Popen.kill()``; the Windows Job
+Object treatment lives in a separate runner task and is gated on the CPython
+availability question.
 """
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -39,42 +45,50 @@ def run_collector(
 ) -> CollectorResult:
     """Invoke the collector and capture stdout, stderr, and exit code.
 
-    The collector is always invoked with `cpu --mode <mode> --json`. Additional
-    flags can be passed via ``extra_args`` (used by tests).
+    On POSIX, the child is placed in its own process group via ``os.setsid``;
+    on timeout we kill the whole group with SIGKILL so descendants don't
+    orphan. Any output produced before the kill is preserved in the result.
 
-    Returns a CollectorResult populated regardless of how the process exited.
-    On timeout, the child is killed and ``killed_by_timeout`` is set; any
-    output produced before the kill is preserved.
-
-    Raises FileNotFoundError if the binary cannot be located. Upstream
-    orchestration is responsible for turning that into a failure envelope.
+    Raises FileNotFoundError if the binary is missing. Orchestration is
+    responsible for turning that into a failure envelope.
     """
     cmd = [binary, "cpu", "--mode", mode, "--json"]
     if extra_args:
         cmd.extend(extra_args)
 
+    popen_kwargs = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+    }
+    if _can_setsid():
+        popen_kwargs["preexec_fn"] = os.setsid
+
     started = _now_utc()
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+
     try:
-        cp = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout.total_seconds(),
-        )
+        stdout, stderr = proc.communicate(timeout=timeout.total_seconds())
         finished = _now_utc()
         return CollectorResult(
-            stdout=cp.stdout,
-            stderr=cp.stderr,
-            exit_code=cp.returncode,
+            stdout=stdout or "",
+            stderr=stderr or "",
+            exit_code=proc.returncode,
             killed_by_timeout=False,
             started_utc=started,
             finished_utc=finished,
         )
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        # Drain any remaining buffered output now that the group is dead.
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
         finished = _now_utc()
         return CollectorResult(
-            stdout=_to_text(e.stdout),
-            stderr=_to_text(e.stderr),
+            stdout=stdout or "",
+            stderr=stderr or "",
             exit_code=None,
             killed_by_timeout=True,
             started_utc=started,
@@ -82,10 +96,19 @@ def run_collector(
         )
 
 
-def _to_text(b) -> str:
-    """TimeoutExpired carries bytes or str depending on the call shape."""
-    if b is None:
-        return ""
-    if isinstance(b, bytes):
-        return b.decode("utf-8", errors="replace")
-    return b
+def _can_setsid() -> bool:
+    return hasattr(os, "setsid")
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    """SIGKILL the child's process group on POSIX; fall back to direct kill."""
+    if _can_setsid() and hasattr(os, "killpg"):
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+            return
+        except ProcessLookupError:
+            return
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass

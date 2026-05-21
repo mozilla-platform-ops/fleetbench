@@ -11,12 +11,22 @@ Argv parsing inside the snippet ignores the fleetbench-style arguments.
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 from datetime import timedelta
 
 import pytest
 
 from fleetbench_run.collector import run_collector
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
 
 
 def test_runs_a_script_and_captures_output(tmp_path):
@@ -109,3 +119,45 @@ def test_missing_binary_raises(tmp_path):
             mode="quick",
             timeout=timedelta(seconds=5),
         )
+
+
+@pytest.mark.skipif(not hasattr(os, "setsid"), reason="POSIX-only")
+def test_timeout_kills_grandchildren_too(tmp_path):
+    """A collector that spawns a long-running child must have its descendants
+    killed when the runner times out, not orphan them.
+
+    The fake collector spawns a sleep, writes the sleep's pid to a file we
+    pass on argv, then sleeps itself. After the timeout fires, both the
+    direct child and the sleep grandchild must be dead.
+    """
+    pid_file = tmp_path / "child.pid"
+    wrapper = tmp_path / "spawn"
+    wrapper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import subprocess, sys, time\n"
+        "child = subprocess.Popen(['sleep', '60'])\n"
+        "with open(sys.argv[-1], 'w') as f:\n"
+        "    f.write(str(child.pid))\n"
+        "time.sleep(60)\n"
+    )
+    wrapper.chmod(0o755)
+
+    result = run_collector(
+        binary=str(wrapper),
+        mode="quick",
+        timeout=timedelta(seconds=1),
+        extra_args=[str(pid_file)],
+    )
+    assert result.killed_by_timeout is True
+
+    # The wrapper had time to write the pid before the timeout fired.
+    grandchild_pid = int(pid_file.read_text().strip())
+
+    # Allow a moment for the SIGKILL to be delivered and the kernel to reap.
+    for _ in range(20):
+        if not _pid_alive(grandchild_pid):
+            break
+        time.sleep(0.05)
+    assert not _pid_alive(grandchild_pid), (
+        f"grandchild pid {grandchild_pid} survived the timeout kill"
+    )
