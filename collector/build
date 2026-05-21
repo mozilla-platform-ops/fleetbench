@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Cross-compile the collector for one or both fleet platforms.
+"""Build the collector for one or all fleet platforms.
 
 Usage:
-  ./build                       # build both linux + windows
+  ./build                       # build linux + windows + mac
   ./build --platform linux      # build linux only
   ./build --platform windows    # build windows only
+  ./build --platform mac        # build mac only (host arch)
 
-Requires: zig, cargo-zigbuild, and the relevant rustup targets:
+Linux and Windows builds cross-compile via cargo-zigbuild. The Mac build uses
+the native Apple toolchain (no zigbuild). All builds use --release.
+
+Requires: zig + cargo-zigbuild for cross-compile, and the relevant rustup targets:
   rustup target add x86_64-unknown-linux-musl
   rustup target add x86_64-pc-windows-gnu
+  rustup target add aarch64-apple-darwin   # on Apple Silicon
 """
 
 from __future__ import annotations
@@ -19,9 +24,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+def _host_mac_target() -> str:
+    """Pick the rustup triple matching the host Mac's architecture."""
+    import platform as _platform
+    machine = _platform.machine()
+    if machine in ("arm64", "aarch64"):
+        return "aarch64-apple-darwin"
+    if machine in ("x86_64", "AMD64"):
+        return "x86_64-apple-darwin"
+    sys.exit(f"unsupported mac arch: {machine}")
+
+
 TARGETS = {
-    "linux":   ("x86_64-unknown-linux-musl", "fleetbench"),
-    "windows": ("x86_64-pc-windows-gnu",     "fleetbench.exe"),
+    # platform -> (rust_target, binary_name, builder)
+    "linux":   ("x86_64-unknown-linux-musl", "fleetbench",     "zigbuild"),
+    "windows": ("x86_64-pc-windows-gnu",     "fleetbench.exe", "zigbuild"),
+    "mac":     (_host_mac_target(),          "fleetbench",     "cargo"),
 }
 
 
@@ -31,8 +49,11 @@ def run(cmd: list[str]) -> None:
 
 
 def build(platform: str) -> Path:
-    rust_target, binary = TARGETS[platform]
-    run(["cargo", "zigbuild", "--release", "--target", rust_target])
+    rust_target, binary, builder = TARGETS[platform]
+    if builder == "zigbuild":
+        run(["cargo", "zigbuild", "--release", "--target", rust_target])
+    else:
+        run(["cargo", "build", "--release", "--target", rust_target])
     out = Path(f"target/{rust_target}/release/{binary}")
     if not out.exists():
         sys.exit(f"build did not produce {out}")
@@ -45,7 +66,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument(
         "--platform",
-        choices=["linux", "windows", "all"],
+        choices=["linux", "windows", "mac", "all"],
         default="all",
         help="target platform (default: all)",
     )

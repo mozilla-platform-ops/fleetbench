@@ -36,19 +36,23 @@ Linux MVP is functionally complete and smoke-tested on real fleet hosts.
 ```bash
 cd collector
 cargo build --release                  # native build for dev
-./build                                # cross-compile both fleet binaries
+./build                                # build all fleet binaries (linux + windows + mac)
 ./build --platform linux               # just the linux musl binary
 ./build --platform windows             # just the windows .exe
+./build --platform mac                 # just the mac host-arch binary
 ```
 
 `./build` produces:
 - `target/x86_64-unknown-linux-musl/release/fleetbench` (~1.1 MB, static, runs
   on any modern Linux including Ubuntu 18.04)
 - `target/x86_64-pc-windows-gnu/release/fleetbench.exe` (~1.0 MB)
+- `target/<host-arch>-apple-darwin/release/fleetbench` (~1.1 MB)
 
-Cross-compile requires `zig` (`brew install zig`), `cargo-zigbuild`
-(`cargo install cargo-zigbuild`), and the relevant rustup targets
-(`rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu`).
+Linux and Windows builds cross-compile via `cargo-zigbuild`; the Mac build
+uses the native Apple toolchain. Tooling requirements: `zig`
+(`brew install zig`), `cargo-zigbuild` (`cargo install cargo-zigbuild`), and
+the relevant rustup targets (`rustup target add x86_64-unknown-linux-musl
+x86_64-pc-windows-gnu aarch64-apple-darwin`).
 
 ### Runner (Python)
 
