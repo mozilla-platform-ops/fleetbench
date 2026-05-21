@@ -59,8 +59,24 @@ pub fn collect_cpu(sys: &System) -> CpuInfo {
     CpuInfo {
         brand: first.map(|c| c.brand().trim().to_string()).filter(|s| !s.is_empty()),
         vendor: first.map(|c| c.vendor_id().trim().to_string()).filter(|s| !s.is_empty()),
-        frequency_mhz: first.map(|c| c.frequency() as u32).filter(|f| *f > 0),
+        // sysinfo's frequency value is unreliable on Darwin (Apple Silicon
+        // has no single meaningful peak frequency; the returned value
+        // round-trips as a single-digit MHz that confuses readers). Drop
+        // it on macOS rather than emit a value that looks plausibly small
+        // but is wrong. Also filter implausibly small values everywhere as
+        // a defense against similar quirks on future platforms.
+        frequency_mhz: collect_frequency_mhz(first),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn collect_frequency_mhz(_first: Option<&sysinfo::Cpu>) -> Option<u32> {
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+fn collect_frequency_mhz(first: Option<&sysinfo::Cpu>) -> Option<u32> {
+    first.map(|c| c.frequency() as u32).filter(|f| *f >= 100)
 }
 
 pub fn current_timestamp_utc() -> String {

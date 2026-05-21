@@ -35,7 +35,7 @@ Verified end-to-end:
   (governor ramp, big.LITTLE + thermal throttling, non-zero idle load averages).
 
 Caveats:
-- `cpu.frequency_mhz` on macOS reports a nonsense value (sysinfo quirk on Darwin); the rest of the metadata is correct.
+- `cpu.frequency_mhz` is `null` on macOS — Apple Silicon doesn't expose a single meaningful peak frequency and sysinfo's value is unreliable, so we deliberately drop it rather than emit a misleading number.
 - `cpu.brand` is null on Android (sysinfo doesn't parse the SoC name from `/proc/cpuinfo` on ARM); workaround if needed: parse it directly.
 
 ## Build
