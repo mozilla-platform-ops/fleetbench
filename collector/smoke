@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""End-to-end smoke: build static musl binary, scp to a Linux host, run validation.
+"""End-to-end smoke: build a collector binary, scp to a host, run validation.
 
 Usage:
-  ./smoke <host>
-  ./smoke <host> --runs 5
-  ./smoke <host> --runs 5 --mode quick
-  ./smoke <host> --no-build
+  ./smoke <host>                              # Linux target (default)
+  ./smoke <host> --platform windows
+  ./smoke <host> --runs 5 --mode normal
+  ./smoke <host> --no-build --no-scp
 
-Requires locally: zig, cargo-zigbuild, x86_64-unknown-linux-musl rustup target.
-Requires on target: write access to ~.
+Requires locally:
+  zig, cargo-zigbuild
+  Linux:   x86_64-unknown-linux-musl rustup target
+  Windows: x86_64-pc-windows-gnu rustup target
+
+Requires on target: ssh with shell access; write access to home dir.
 """
 
 from __future__ import annotations
@@ -21,14 +25,33 @@ import subprocess
 import sys
 from pathlib import Path
 
-TARGET = "x86_64-unknown-linux-musl"
-BIN_LOCAL = Path(f"target/{TARGET}/release/fleetbench")
-BIN_REMOTE = "~/fleetbench"
 EXPECTED_PRIME_COUNTS = {
     10_000_000: 664_579,
     100_000_000: 5_761_455,
     1_000_000_000: 50_847_534,
 }
+
+
+class Target:
+    """Per-platform build & invocation details."""
+    def __init__(self, platform: str):
+        if platform == "linux":
+            self.rust_target = "x86_64-unknown-linux-musl"
+            self.bin_local = Path(f"target/{self.rust_target}/release/fleetbench")
+            self.bin_remote = "fleetbench"
+            self.expect_linux_env = True
+            self.expected_counter_kind = "linux_proc_stat"
+            self.needs_chmod = True
+        elif platform == "windows":
+            self.rust_target = "x86_64-pc-windows-gnu"
+            self.bin_local = Path(f"target/{self.rust_target}/release/fleetbench.exe")
+            self.bin_remote = "fleetbench.exe"
+            self.expect_linux_env = False
+            self.expected_counter_kind = None  # null on Windows in the current MVP
+            self.needs_chmod = False
+        else:
+            raise ValueError(f"unsupported platform: {platform}")
+        self.platform = platform
 
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
@@ -41,20 +64,32 @@ def ssh_run(host: str, remote_cmd: str, capture: bool = False) -> str:
     return cp.stdout if capture else ""
 
 
-def build() -> None:
-    run(["cargo", "zigbuild", "--release", "--target", TARGET])
-    if not BIN_LOCAL.exists():
-        sys.exit(f"build did not produce {BIN_LOCAL}")
-    sz = BIN_LOCAL.stat().st_size
-    print(f"  built: {BIN_LOCAL}  ({sz/1024/1024:.1f} MB)")
+def build(target: Target) -> None:
+    run(["cargo", "zigbuild", "--release", "--target", target.rust_target])
+    if not target.bin_local.exists():
+        sys.exit(f"build did not produce {target.bin_local}")
+    sz = target.bin_local.stat().st_size
+    print(f"  built: {target.bin_local}  ({sz/1024/1024:.1f} MB)")
 
 
-def scp_binary(host: str) -> None:
-    run(["scp", "-q", str(BIN_LOCAL), f"{host}:{BIN_REMOTE}"])
-    ssh_run(host, f"chmod +x {BIN_REMOTE}")
+def scp_binary(host: str, target: Target) -> None:
+    run(["scp", "-q", str(target.bin_local), f"{host}:{target.bin_remote}"])
+    if target.needs_chmod:
+        ssh_run(host, f"chmod +x {target.bin_remote}")
 
 
-def validate_envelope(d: dict, mode: str) -> None:
+def remote_invoke(target: Target, subcmd: str) -> str:
+    """Build the remote command for invoking the collector with a subcommand."""
+    if target.platform == "windows":
+        # Windows OpenSSH places the user in their home dir; the binary is
+        # at ~/fleetbench.exe. .\ prefix is needed for cmd.exe; PowerShell
+        # tolerates either. Use the unprefixed name and trust PATH if the
+        # default shell is PowerShell; ./ otherwise. Default to the safer form.
+        return f".\\{target.bin_remote} {subcmd}"
+    return f"./{target.bin_remote} {subcmd}"
+
+
+def validate_envelope(d: dict, target: Target) -> None:
     required_top = [
         "schema_version", "collector_version", "cpu_suite_version",
         "timestamp_utc", "status", "host", "cpu", "config", "environment", "results",
@@ -68,11 +103,19 @@ def validate_envelope(d: dict, mode: str) -> None:
     env = d["environment"]
     for slot in ("load_pre_warmup", "load_pre_timed", "load_post_timed"):
         s = env[slot]
-        cc = s["cpu_counters"]
-        assert cc is not None, f"cpu_counters null in {slot}"
-        assert cc["kind"] == "linux_proc_stat", f"counter kind in {slot}: {cc['kind']}"
-        assert cc["total_units"] > cc["idle_units"], f"counters wrong in {slot}: {cc}"
-        assert s["load_1"] is not None, f"load_1 null in {slot}"
+        assert "cpu_counters" in s
+        if target.expect_linux_env:
+            cc = s["cpu_counters"]
+            assert cc is not None, f"cpu_counters null in {slot}"
+            assert cc["kind"] == target.expected_counter_kind, \
+                f"counter kind in {slot}: {cc['kind']}"
+            assert cc["total_units"] > cc["idle_units"], f"counters wrong in {slot}: {cc}"
+            assert s["load_1"] is not None, f"load_1 null in {slot}"
+        else:
+            # On non-Linux the MVP emits null env fields. Schema must still
+            # have the slots; the values just aren't populated yet.
+            for field in ("cpu_counters", "load_1", "load_5", "load_15"):
+                assert field in s, f"missing field {field} in {slot}"
     expected = EXPECTED_PRIME_COUNTS[d["config"]["prime_limit"]]
     for name in ("prime_sieve_1t", "prime_sieve_mt"):
         r = d["results"][name]
@@ -81,18 +124,16 @@ def validate_envelope(d: dict, mode: str) -> None:
         assert counts == {expected}, f"{name} prime_count: {counts} != {expected}"
 
 
-def fetch_run(host: str, mode: str) -> dict:
-    out = ssh_run(host, f"{BIN_REMOTE} cpu --mode {mode} --json", capture=True)
+def fetch_run(host: str, target: Target, mode: str) -> dict:
+    out = ssh_run(host, remote_invoke(target, f"cpu --mode {mode} --json"), capture=True)
     return json.loads(out)
 
 
-def check_host_activity(host: str) -> None:
-    """Check whether a taskcluster job is running on the host via gwhc.
-
-    Output is advisory: we print state and any non-pass checks so the operator
-    can correlate noisy benchmark timings with concurrent worker activity.
-    Absence of gwhc is benign — Linux fleet hosts have it; other hosts don't.
-    """
+def check_host_activity(host: str, target: Target) -> None:
+    """gwhc activity check. Linux-only; silent skip on Windows."""
+    if target.platform != "linux":
+        print("  skipping (Windows host; gwhc is Linux-only)")
+        return
     cp = subprocess.run(
         ["ssh", host, "command -v gwhc >/dev/null && gwhc --json || echo __NOT_FOUND__"],
         capture_output=True, text=True,
@@ -147,6 +188,8 @@ def summarize(label: str, runs: list[dict], workload: str) -> None:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("host", help="ssh destination")
+    p.add_argument("--platform", choices=["linux", "windows"], default="linux",
+                   help="target platform (default: linux)")
     p.add_argument("--runs", type=int, default=1, help="number of benchmark runs (default 1)")
     p.add_argument("--mode", default="quick", choices=["quick", "normal", "long"],
                    help="cpu mode for the repeated runs (default quick)")
@@ -154,29 +197,31 @@ def main() -> int:
     p.add_argument("--no-scp", action="store_true", help="skip scp (assume binary already on host)")
     args = p.parse_args()
 
-    print("=== build ===")
+    target = Target(args.platform)
+
+    print(f"=== build ({target.rust_target}) ===")
     if args.no_build:
         print("  skipped")
     else:
-        build()
+        build(target)
 
-    print(f"\n=== scp -> {args.host}:{BIN_REMOTE} ===")
+    print(f"\n=== scp -> {args.host}:{target.bin_remote} ===")
     if args.no_scp:
         print("  skipped")
     else:
-        scp_binary(args.host)
+        scp_binary(args.host, target)
 
-    print(f"\n=== host activity check on {args.host} (gwhc) ===")
-    check_host_activity(args.host)
+    print(f"\n=== host activity check on {args.host} ===")
+    check_host_activity(args.host, target)
 
     print(f"\n=== inspect on {args.host} ===")
-    print(ssh_run(args.host, f"{BIN_REMOTE} inspect", capture=True))
+    print(ssh_run(args.host, remote_invoke(target, "inspect"), capture=True))
 
     print(f"=== cpu --mode {args.mode} x {args.runs} ===")
     runs: list[dict] = []
     for i in range(args.runs):
-        d = fetch_run(args.host, args.mode)
-        validate_envelope(d, args.mode)
+        d = fetch_run(args.host, target, args.mode)
+        validate_envelope(d, target)
         st = [f"{x['seconds']*1000:.1f}" for x in d["results"]["prime_sieve_1t"]["iterations"]]
         mt = [f"{x['seconds']*1000:.1f}" for x in d["results"]["prime_sieve_mt"]["iterations"]]
         print(f"  run {i+1:>3}: 1t={st} ms  mt={mt} ms")
@@ -189,7 +234,7 @@ def main() -> int:
 
     print(f"\n=== negative test: bad args produce a well-formed failure envelope ===")
     cp = subprocess.run(
-        ["ssh", args.host, f"{BIN_REMOTE} cpu --threads 0 --json"],
+        ["ssh", args.host, remote_invoke(target, "cpu --threads 0 --json")],
         capture_output=True, text=True,
     )
     if cp.returncode != 1:
