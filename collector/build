@@ -2,12 +2,11 @@
 """Build the collector for one or all fleet platforms.
 
 Usage:
-  ./build                       # build linux + windows + mac (default; android opt-in)
+  ./build                       # build all four (linux + windows + mac + android)
   ./build --platform linux      # build linux only
   ./build --platform windows    # build windows only
   ./build --platform mac        # build mac only (host arch)
   ./build --platform android    # build android (aarch64); requires NDK
-  ./build --platform all        # build everything including android
 
 Builder per platform:
   linux, windows  -> cargo-zigbuild (zig as linker, no platform SDK required)
@@ -50,11 +49,6 @@ TARGETS = {
     "android": ("aarch64-linux-android",     "fleetbench",     "cargo-ndk"),
 }
 
-# Platforms built by default with --platform all (and when no flag is given).
-# Android is opt-in because it requires the NDK; we don't want the default
-# build to fail for developers who only care about the desktop fleet.
-_DEFAULT_PLATFORMS = ["linux", "windows", "mac"]
-
 
 def run_quiet(cmd: list[str]) -> None:
     """Run a command, suppressing output unless it fails."""
@@ -95,20 +89,12 @@ def main() -> int:
     p.add_argument(
         "--platform",
         choices=["linux", "windows", "mac", "android", "all"],
-        default=None,
-        help=(
-            "target platform. No flag = linux+windows+mac (the default desktop "
-            "fleet). 'all' adds android (requires NDK). Or pick one platform."
-        ),
+        default="all",
+        help="target platform (default: all)",
     )
     args = p.parse_args()
 
-    if args.platform is None:
-        platforms = _DEFAULT_PLATFORMS
-    elif args.platform == "all":
-        platforms = list(TARGETS)
-    else:
-        platforms = [args.platform]
+    platforms = list(TARGETS) if args.platform == "all" else [args.platform]
     for plat in platforms:
         print(f"\n=== {plat} ===")
         build(plat)

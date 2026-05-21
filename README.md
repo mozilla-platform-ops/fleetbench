@@ -36,12 +36,11 @@ Linux MVP is functionally complete and smoke-tested on real fleet hosts.
 ```bash
 cd collector
 cargo build --release                  # native build for dev
-./build                                # build the desktop fleet (linux + windows + mac)
+./build                                # build all four (linux + windows + mac + android)
 ./build --platform linux               # just the linux musl binary
 ./build --platform windows             # just the windows .exe
 ./build --platform mac                 # just the mac host-arch binary
 ./build --platform android             # aarch64 Android (requires NDK)
-./build --platform all                 # everything, including android
 ```
 
 `./build` produces:
@@ -49,7 +48,7 @@ cargo build --release                  # native build for dev
   on any modern Linux including Ubuntu 18.04)
 - `target/x86_64-pc-windows-gnu/release/fleetbench.exe` (~1.0 MB)
 - `target/<host-arch>-apple-darwin/release/fleetbench` (~1.1 MB)
-- `target/aarch64-linux-android/release/fleetbench` (Android opt-in)
+- `target/aarch64-linux-android/release/fleetbench`
 
 Linux and Windows builds cross-compile via `cargo-zigbuild`; the Mac build
 uses the native Apple toolchain; the Android build uses `cargo-ndk`.
