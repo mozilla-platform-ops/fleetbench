@@ -116,6 +116,62 @@ analysis must skip `*.partial` files. A `*.partial` file present for more than
 a few seconds indicates a stuck or crashed runner on that host; worth
 surfacing as an operational warning, not an analysis input.
 
+## Android phones behave differently — don't reuse desktop heuristics
+
+The "drop iter 0, take median of iters 1+" pattern works on desktops because
+their thermal headroom and frequency governors stabilize within milliseconds.
+Phones are different. From a single Pixel 10 Pro smoke run (Tensor G5,
+8 logical cores), `--mode quick`:
+
+```
+1t: [53.6, 27.9, 20.7] ms     # iter 0 slowest; still ramping
+mt: [27.0, 87.9, 95.1] ms     # iter 0 fastest; thermal throttling kicks in
+```
+
+Two phenomena are stacked here:
+
+1. **Governor ramp is slower on mobile.** The 10⁸ warmup that fully wakes a
+   Xeon E3 does not fully wake a Tensor G5; the 1t curve is still trending
+   faster at iter 2. Treating iter 0 as one-shot ramp is wrong on phones;
+   the ramp can span the entire timed window.
+
+2. **Mobile big.LITTLE + thermal headroom inverts the mt pattern.** Iter 0
+   of multi-thread lands on cool big cores and finishes fast. By iter 1
+   the SoC is hot and the scheduler is migrating work to LITTLE efficiency
+   cores; subsequent iters are 3–4× slower. This is real device behavior,
+   not measurement noise — the phone *is* slower under sustained load.
+
+Implications for analysis on Android envelopes:
+
+- **Do not blindly drop iter 0 on mt.** On phones it is often the cleanest
+  reading. Take median across all iterations as a first cut, but also
+  consider min for "best-case performance" and the slope (last / first) as
+  a **thermal-headroom signal**. Two phones with the same median may still
+  be worth differentiating if one degrades 2× across iterations and another
+  stays flat.
+
+- **Load averages will rarely be ≈0** on a real phone. Pixel 10 Pro idle
+  showed `load_1=1.37, load_5=3.25, load_15=4.64` — the phone is not idle,
+  Android has a constant trickle of background work. Don't apply a
+  desktop-style "non-zero load average means contaminated run" filter; phones
+  need a different threshold or a delta-based rule (load went *up* during
+  our window, not just "load was non-zero").
+
+- **Run-to-run variance will be larger than on desktops.** A single sample
+  is much less reliable. Either require more iterations per run, or more
+  runs per host, or both, before trusting comparisons.
+
+- **`host.os_family == "android"`** is the discriminator. The collector
+  reports this distinct from `"linux"` even though Android is a Linux
+  kernel; analysis should branch on it for any phone-specific logic.
+
+- **Heterogeneous cores are opaque to the schema.** The collector reports
+  `logical_cpus = 8` for an 8-core Pixel even though the cores are not
+  equivalent. Without per-core data, "mt scales sublinearly" cannot be
+  distinguished from "scheduler chose LITTLE cores." Future schema work
+  could add per-core frequency capability ranges; until then, treat the
+  Android mt timing as a coarser signal than 1t.
+
 ## Failure envelopes are envelopes
 
 When the collector fails (correctness check, bad args, runtime error), the
