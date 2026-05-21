@@ -25,10 +25,13 @@ Tooling:
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 def _host_mac_target() -> str:
     """Pick the rustup triple matching the host Mac's architecture."""
@@ -48,6 +51,22 @@ TARGETS = {
     "mac":     (_host_mac_target(),          "fleetbench",     "cargo"),
     "android": ("aarch64-linux-android",     "fleetbench",     "cargo-ndk"),
 }
+
+
+def preflight(platform: str) -> Optional[str]:
+    """Return None if the platform is buildable, else a human message explaining what's missing."""
+    if platform == "android":
+        missing = []
+        if shutil.which("cargo-ndk") is None:
+            missing.append("cargo-ndk not on PATH (install: cargo install cargo-ndk)")
+        ndk_home = os.environ.get("ANDROID_NDK_HOME")
+        if not ndk_home:
+            missing.append("ANDROID_NDK_HOME not set (install NDK and export it; see README)")
+        elif not Path(ndk_home).is_dir():
+            missing.append(f"ANDROID_NDK_HOME={ndk_home} does not exist")
+        if missing:
+            return "; ".join(missing)
+    return None
 
 
 def run_quiet(cmd: list[str]) -> None:
@@ -95,9 +114,17 @@ def main() -> int:
     args = p.parse_args()
 
     platforms = list(TARGETS) if args.platform == "all" else [args.platform]
+    skipped: list[str] = []
     for plat in platforms:
         print(f"\n=== {plat} ===")
+        missing = preflight(plat)
+        if missing:
+            print(f"  skipped: {missing}")
+            skipped.append(plat)
+            continue
         build(plat)
+    if skipped:
+        print(f"\nskipped platforms: {', '.join(skipped)}")
     return 0
 
 
