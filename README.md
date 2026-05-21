@@ -22,16 +22,21 @@ the collected envelope files.
 
 ## Status
 
-| Component | Linux | Windows | Android |
-|---|---|---|---|
-| Collector | shipped | binary cross-compiles, env sampling fields are null pending implementation | shipped (env block populated; same `/proc/stat` + `/proc/loadavg` path as Linux) |
-| Runner    | shipped | deferred pending CPython availability question | not applicable — Android deploy model is different |
+| Component | Linux | Windows | macOS | Android |
+|---|---|---|---|---|
+| Collector | shipped | binary cross-compiles, env sampling fields are null pending implementation | shipped (env block intentionally null — no `/proc` on Darwin) | shipped (env block populated; same `/proc/stat` + `/proc/loadavg` path as Linux) |
+| Runner    | shipped | deferred pending CPython availability question | works (dev) | not applicable — Android deploy model is different |
 
-Linux MVP is functionally complete and smoke-tested on real fleet hosts.
-Android collector validated end-to-end on a Pixel 10 Pro via `adb push`;
-see [`docs/analysis_notes.md`](docs/analysis_notes.md) for Android-specific
-behavior the analysis layer needs to know about (governor ramp, big.LITTLE
-+ thermal throttling, non-zero idle load averages).
+Verified end-to-end:
+- **Linux**: smoke-tested on real fleet hosts (Xeon E3-1585L v5).
+- **macOS**: dev box (Apple Silicon M4 Pro); pi(10⁹) 1t in ~840 ms, mt in ~118 ms across 14 cores.
+- **Android**: Pixel 10 Pro via `adb push`. See [`docs/analysis_notes.md`](docs/analysis_notes.md)
+  for Android-specific behavior the analysis layer needs to know about
+  (governor ramp, big.LITTLE + thermal throttling, non-zero idle load averages).
+
+Caveats:
+- `cpu.frequency_mhz` on macOS reports a nonsense value (sysinfo quirk on Darwin); the rest of the metadata is correct.
+- `cpu.brand` is null on Android (sysinfo doesn't parse the SoC name from `/proc/cpuinfo` on ARM); workaround if needed: parse it directly.
 
 ## Build
 
