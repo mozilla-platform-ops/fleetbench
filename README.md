@@ -22,12 +22,16 @@ the collected envelope files.
 
 ## Status
 
-| Component | Linux | Windows |
-|---|---|---|
-| Collector | shipped | binary cross-compiles, env sampling fields are null pending implementation |
-| Runner    | shipped | deferred pending CPython availability question |
+| Component | Linux | Windows | Android |
+|---|---|---|---|
+| Collector | shipped | binary cross-compiles, env sampling fields are null pending implementation | shipped (env block populated; same `/proc/stat` + `/proc/loadavg` path as Linux) |
+| Runner    | shipped | deferred pending CPython availability question | not applicable — Android deploy model is different |
 
 Linux MVP is functionally complete and smoke-tested on real fleet hosts.
+Android collector validated end-to-end on a Pixel 10 Pro via `adb push`;
+see [`docs/analysis_notes.md`](docs/analysis_notes.md) for Android-specific
+behavior the analysis layer needs to know about (governor ramp, big.LITTLE
++ thermal throttling, non-zero idle load averages).
 
 ## Build
 
@@ -105,6 +109,25 @@ The smoke does:
 
 If `gwhc` reports a non-IDLE state, smoke exits 0 with a summary rather than
 running benchmarks against a contaminated baseline.
+
+### Android (manual; adb-based)
+
+`./smoke` does not yet wire Android. Use `adb` directly:
+
+```bash
+cd collector
+./build --platform android
+adb push target/aarch64-linux-android/release/fleetbench /data/local/tmp/fleetbench
+adb shell chmod 755 /data/local/tmp/fleetbench
+adb shell /data/local/tmp/fleetbench inspect
+adb shell /data/local/tmp/fleetbench cpu --mode quick --json
+```
+
+`/data/local/tmp/` is the standard "anyone can push and execute" path on
+Android. The collector emits the same v3 envelope as on Linux, with
+`host.os_family = "android"` and a populated `environment` block from the
+same `/proc/stat` + `/proc/loadavg` reads. `adb shell` exit codes are
+historically unreliable; trust the JSON's `status` field, not `$?`.
 
 ## Operational Model (Runner)
 
