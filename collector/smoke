@@ -32,6 +32,15 @@ EXPECTED_PRIME_COUNTS = {
 }
 
 
+_WINDOWS_SSH_OPTS = [
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=10",
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "UserKnownHostsFile=/dev/null",
+    "-i", "/Users/aerickson/.ssh/id_rsa.win_audit_2021_02-17",
+]
+
+
 class Target:
     """Per-platform build & invocation details."""
     def __init__(self, platform: str):
@@ -42,6 +51,7 @@ class Target:
             self.expect_linux_env = True
             self.expected_counter_kind = "linux_proc_stat"
             self.needs_chmod = True
+            self.ssh_opts: list[str] = []
         elif platform == "windows":
             self.rust_target = "x86_64-pc-windows-gnu"
             self.bin_local = Path(f"target/{self.rust_target}/release/fleetbench.exe")
@@ -49,6 +59,7 @@ class Target:
             self.expect_linux_env = False
             self.expected_counter_kind = None  # null on Windows in the current MVP
             self.needs_chmod = False
+            self.ssh_opts = list(_WINDOWS_SSH_OPTS)
         else:
             raise ValueError(f"unsupported platform: {platform}")
         self.platform = platform
@@ -59,8 +70,8 @@ def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, **kw)
 
 
-def ssh_run(host: str, remote_cmd: str, capture: bool = False) -> str:
-    cp = run(["ssh", host, remote_cmd], capture_output=capture, text=capture)
+def ssh_run(host: str, remote_cmd: str, target: "Target", capture: bool = False) -> str:
+    cp = run(["ssh", *target.ssh_opts, host, remote_cmd], capture_output=capture, text=capture)
     return cp.stdout if capture else ""
 
 
@@ -73,9 +84,9 @@ def build(target: Target) -> None:
 
 
 def scp_binary(host: str, target: Target) -> None:
-    run(["scp", "-q", str(target.bin_local), f"{host}:{target.bin_remote}"])
+    run(["scp", "-q", *target.ssh_opts, str(target.bin_local), f"{host}:{target.bin_remote}"])
     if target.needs_chmod:
-        ssh_run(host, f"chmod +x {target.bin_remote}")
+        ssh_run(host, f"chmod +x {target.bin_remote}", target)
 
 
 def remote_invoke(target: Target, subcmd: str) -> str:
@@ -125,7 +136,7 @@ def validate_envelope(d: dict, target: Target) -> None:
 
 
 def fetch_run(host: str, target: Target, mode: str) -> dict:
-    out = ssh_run(host, remote_invoke(target, f"cpu --mode {mode} --json"), capture=True)
+    out = ssh_run(host, remote_invoke(target, f"cpu --mode {mode} --json"), target, capture=True)
     return json.loads(out)
 
 
@@ -215,7 +226,7 @@ def main() -> int:
     check_host_activity(args.host, target)
 
     print(f"\n=== inspect on {args.host} ===")
-    print(ssh_run(args.host, remote_invoke(target, "inspect"), capture=True))
+    print(ssh_run(args.host, remote_invoke(target, "inspect"), target, capture=True))
 
     print(f"=== cpu --mode {args.mode} x {args.runs} ===")
     runs: list[dict] = []
@@ -234,7 +245,7 @@ def main() -> int:
 
     print(f"\n=== negative test: bad args produce a well-formed failure envelope ===")
     cp = subprocess.run(
-        ["ssh", args.host, remote_invoke(target, "cpu --threads 0 --json")],
+        ["ssh", *target.ssh_opts, args.host, remote_invoke(target, "cpu --threads 0 --json")],
         capture_output=True, text=True,
     )
     if cp.returncode != 1:
