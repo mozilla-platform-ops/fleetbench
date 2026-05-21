@@ -61,8 +61,16 @@ rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu \
                   aarch64-apple-darwin aarch64-linux-android
 ```
 
-Android additionally needs the NDK (install via Android Studio's SDK Manager
-or `brew install --cask android-ndk`) with `ANDROID_NDK_HOME` set.
+Android additionally needs the NDK. With Homebrew:
+
+```bash
+brew install --cask android-ndk
+export ANDROID_NDK_HOME="$(brew --prefix)/share/android-ndk"
+```
+
+Add the `export` to your shell rc so it persists. Android Studio's SDK
+Manager also works; in that case `ANDROID_NDK_HOME` points at the SDK's
+`ndk/<version>/` directory instead.
 
 ### Runner (Python)
 
