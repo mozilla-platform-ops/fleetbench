@@ -2,18 +2,25 @@
 """Build the collector for one or all fleet platforms.
 
 Usage:
-  ./build                       # build linux + windows + mac
+  ./build                       # build linux + windows + mac (default; android opt-in)
   ./build --platform linux      # build linux only
   ./build --platform windows    # build windows only
   ./build --platform mac        # build mac only (host arch)
+  ./build --platform android    # build android (aarch64); requires NDK
+  ./build --platform all        # build everything including android
 
-Linux and Windows builds cross-compile via cargo-zigbuild. The Mac build uses
-the native Apple toolchain (no zigbuild). All builds use --release.
+Builder per platform:
+  linux, windows  -> cargo-zigbuild (zig as linker, no platform SDK required)
+  mac             -> native cargo build (uses host Apple toolchain)
+  android         -> cargo ndk (requires Android NDK + cargo-ndk)
 
-Requires: zig + cargo-zigbuild for cross-compile, and the relevant rustup targets:
-  rustup target add x86_64-unknown-linux-musl
-  rustup target add x86_64-pc-windows-gnu
-  rustup target add aarch64-apple-darwin   # on Apple Silicon
+Tooling:
+  brew install zig
+  cargo install cargo-zigbuild cargo-ndk
+  rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu \\
+                    aarch64-apple-darwin aarch64-linux-android
+  # Android NDK: install via Android Studio's SDK Manager or `brew install --cask android-ndk`,
+  # then export ANDROID_NDK_HOME pointing at it.
 """
 
 from __future__ import annotations
@@ -40,7 +47,13 @@ TARGETS = {
     "linux":   ("x86_64-unknown-linux-musl", "fleetbench",     "zigbuild"),
     "windows": ("x86_64-pc-windows-gnu",     "fleetbench.exe", "zigbuild"),
     "mac":     (_host_mac_target(),          "fleetbench",     "cargo"),
+    "android": ("aarch64-linux-android",     "fleetbench",     "cargo-ndk"),
 }
+
+# Platforms built by default with --platform all (and when no flag is given).
+# Android is opt-in because it requires the NDK; we don't want the default
+# build to fail for developers who only care about the desktop fleet.
+_DEFAULT_PLATFORMS = ["linux", "windows", "mac"]
 
 
 def run_quiet(cmd: list[str]) -> None:
@@ -59,8 +72,16 @@ def build(platform: str) -> Path:
     rust_target, binary, builder = TARGETS[platform]
     if builder == "zigbuild":
         run_quiet(["cargo", "zigbuild", "--release", "--target", rust_target])
-    else:
+    elif builder == "cargo":
         run_quiet(["cargo", "build", "--release", "--target", rust_target])
+    elif builder == "cargo-ndk":
+        # cargo-ndk wraps cargo with the NDK toolchain configured. It needs
+        # ANDROID_NDK_HOME set or the NDK on PATH. -t names the rust target.
+        run_quiet([
+            "cargo", "ndk", "-t", rust_target, "--", "build", "--release",
+        ])
+    else:
+        sys.exit(f"unknown builder for {platform!r}: {builder}")
     out = Path(f"target/{rust_target}/release/{binary}")
     if not out.exists():
         sys.exit(f"build did not produce {out}")
@@ -73,13 +94,21 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument(
         "--platform",
-        choices=["linux", "windows", "mac", "all"],
-        default="all",
-        help="target platform (default: all)",
+        choices=["linux", "windows", "mac", "android", "all"],
+        default=None,
+        help=(
+            "target platform. No flag = linux+windows+mac (the default desktop "
+            "fleet). 'all' adds android (requires NDK). Or pick one platform."
+        ),
     )
     args = p.parse_args()
 
-    platforms = list(TARGETS) if args.platform == "all" else [args.platform]
+    if args.platform is None:
+        platforms = _DEFAULT_PLATFORMS
+    elif args.platform == "all":
+        platforms = list(TARGETS)
+    else:
+        platforms = [args.platform]
     for plat in platforms:
         print(f"\n=== {plat} ===")
         build(plat)
