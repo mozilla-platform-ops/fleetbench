@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Cross-compile the collector for one or both fleet platforms.
+
+Usage:
+  ./build                       # build both linux + windows
+  ./build --platform linux      # build linux only
+  ./build --platform windows    # build windows only
+
+Requires: zig, cargo-zigbuild, and the relevant rustup targets:
+  rustup target add x86_64-unknown-linux-musl
+  rustup target add x86_64-pc-windows-gnu
+"""
+
+from __future__ import annotations
+
+import argparse
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+TARGETS = {
+    "linux":   ("x86_64-unknown-linux-musl", "fleetbench"),
+    "windows": ("x86_64-pc-windows-gnu",     "fleetbench.exe"),
+}
+
+
+def run(cmd: list[str]) -> None:
+    print(f"$ {' '.join(shlex.quote(c) for c in cmd)}", file=sys.stderr)
+    subprocess.run(cmd, check=True)
+
+
+def build(platform: str) -> Path:
+    rust_target, binary = TARGETS[platform]
+    run(["cargo", "zigbuild", "--release", "--target", rust_target])
+    out = Path(f"target/{rust_target}/release/{binary}")
+    if not out.exists():
+        sys.exit(f"build did not produce {out}")
+    sz = out.stat().st_size
+    print(f"  built: {out}  ({sz/1024/1024:.1f} MB)")
+    return out
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument(
+        "--platform",
+        choices=["linux", "windows", "all"],
+        default="all",
+        help="target platform (default: all)",
+    )
+    args = p.parse_args()
+
+    platforms = list(TARGETS) if args.platform == "all" else [args.platform]
+    for plat in platforms:
+        print(f"\n=== {plat} ===")
+        build(plat)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

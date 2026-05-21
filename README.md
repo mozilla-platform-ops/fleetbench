@@ -35,16 +35,20 @@ Linux MVP is functionally complete and smoke-tested on real fleet hosts.
 
 ```bash
 cd collector
-cargo build --release                                # native build for dev
-cargo zigbuild --release --target x86_64-unknown-linux-musl   # static Linux binary for fleet deploy
-cargo zigbuild --release --target x86_64-pc-windows-gnu       # Windows .exe
+cargo build --release                  # native build for dev
+./build                                # cross-compile both fleet binaries
+./build --platform linux               # just the linux musl binary
+./build --platform windows             # just the windows .exe
 ```
 
-The musl static binary is ~1.1 MB and runs on any modern Linux including
-Ubuntu 18.04. The Windows binary is ~987 KB.
+`./build` produces:
+- `target/x86_64-unknown-linux-musl/release/fleetbench` (~1.1 MB, static, runs
+  on any modern Linux including Ubuntu 18.04)
+- `target/x86_64-pc-windows-gnu/release/fleetbench.exe` (~1.0 MB)
 
 Cross-compile requires `zig` (`brew install zig`), `cargo-zigbuild`
-(`cargo install cargo-zigbuild`), and the relevant rustup targets.
+(`cargo install cargo-zigbuild`), and the relevant rustup targets
+(`rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu`).
 
 ### Runner (Python)
 
