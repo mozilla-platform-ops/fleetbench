@@ -29,7 +29,15 @@ enum Command {
         json: bool,
     },
     /// Run CPU benchmark workloads.
+    ///
+    /// Default: fixed-iteration runs sized by --mode (quick/normal/long).
+    /// With --duration: time-bounded torture run; --mode picks per-iteration
+    /// size only, iteration count is whatever completes before the deadline.
     Cpu {
+        /// Workload preset. Picks prime_limit and iteration count for
+        /// default runs (quick=pi(10^7)x3, normal=pi(10^8)x5, long=pi(10^9)x3).
+        /// With --duration: only prime_limit applies; iteration count is
+        /// ignored. Pair --duration with --mode quick for dense timing.
         #[arg(long, value_enum, default_value_t = Mode::Normal)]
         mode: Mode,
         #[arg(long)]
@@ -43,17 +51,15 @@ enum Command {
         /// Skip the brief warmup run before timed iterations.
         #[arg(long)]
         no_warmup: bool,
-        /// Time-bounded torture/stress mode. When set, loops the MT sieve
-        /// until the duration elapses (skipping the 1t workload). Accepts
-        /// bare seconds or human suffixes: `30s`, `10m`, `1h`.
+        /// Torture/stress mode: loop MT sieve for this long (e.g. 30s, 10m, 1h);
+        /// --mode then sets per-iteration size only. Pair with --mode quick.
         ///
-        /// Interaction with --mode: --mode picks the per-iteration size
-        /// (prime_limit) and nothing else — the preset's iteration count is
-        /// ignored. For dense per-iteration timing across the run, use
-        /// `--mode quick` (each iteration ~tens of ms). `--mode long` still
-        /// works but produces only a handful of multi-second iterations,
-        /// which makes iteration-time drift a coarse signal; rely on
-        /// frequency_series for fine-grained throttle evidence in that case.
+        /// Skips the 1t workload so all cores stay hot continuously. A
+        /// background sampler captures per-core CPU frequency at ~1Hz into
+        /// the envelope as `frequency_series` — the direct signal for thermal
+        /// throttling (boost-clock samples decay toward base-clock over the
+        /// run). With --mode long each iteration takes ~seconds, so few
+        /// complete; rely on frequency_series for fine-grained evidence.
         #[arg(long, value_parser = parse_duration_arg)]
         duration: Option<u64>,
     },
