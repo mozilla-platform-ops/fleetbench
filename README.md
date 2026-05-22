@@ -1,7 +1,8 @@
 # Fleetbench
 
-A small cross-platform CPU benchmark collector for performance-testing fleets,
-plus a Python runner that wraps it for use on Linux Taskcluster worker hosts.
+A small cross-platform CPU benchmark collector for performance-testing fleets
+(pools of Taskcluster worker hosts that run Firefox perf tests), plus a
+Python runner that wraps it for use on those hosts.
 
 Fleetbench produces raw per-iteration timings and host metadata as versioned
 JSON. It does not score hosts, compare across hardware classes, or maintain
