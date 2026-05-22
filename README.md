@@ -99,6 +99,27 @@ cargo build --release                  # native build for dev
 - `target/<host-arch>-apple-darwin/release/fleetbench` (~1.1 MB)
 - `target/aarch64-linux-android/release/fleetbench`
 
+### Identifying a binary
+
+Every binary embeds version + git SHA as a tagged sentinel string. Three ways
+to read it, in order of effort:
+
+```bash
+# 1. From any machine (Mac, Linux), even for a Windows .exe:
+strings -a fleetbench[.exe] | grep FLEETBENCH_BUILD
+# FLEETBENCH_BUILD=0.1.0+3eb69d100e10
+# (suffix "-dirty" appears if the build had uncommitted tracked changes)
+
+# 2. Run the binary itself:
+fleetbench --version
+# fleetbench 0.1.0 (3eb69d100e10)
+
+# 3. Look at any envelope it produced — collector_git_sha is in the JSON.
+```
+
+When sharing a build, paste the `FLEETBENCH_BUILD=...` line so the recipient
+can confirm they're running what you sent.
+
 Linux and Windows builds cross-compile via `cargo-zigbuild`; the Mac build
 uses the native Apple toolchain; the Android build uses `cargo-ndk`.
 

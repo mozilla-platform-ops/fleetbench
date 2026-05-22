@@ -14,6 +14,24 @@ const VERSION_STR: &str = concat!(
     ")",
 );
 
+/// Distinctive tagged sentinel embedded in every binary so operators can
+/// identify a build without running it. Grep recipe:
+///
+/// ```sh
+/// strings -a fleetbench[.exe] | grep FLEETBENCH_BUILD
+/// # FLEETBENCH_BUILD=0.1.0+abc123def456
+/// ```
+///
+/// `#[used]` keeps the static (and the string literal it points to) in the
+/// final binary regardless of dead-code elimination.
+#[used]
+static BUILD_INFO: &str = concat!(
+    "FLEETBENCH_BUILD=",
+    env!("CARGO_PKG_VERSION"),
+    "+",
+    env!("FLEETBENCH_GIT_SHA"),
+);
+
 #[derive(Parser)]
 #[command(name = "fleetbench", version = VERSION_STR, about)]
 struct Cli {
