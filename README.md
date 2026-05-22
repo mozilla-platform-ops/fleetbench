@@ -161,6 +161,31 @@ fleetbench-run \
   --min-interval 24h
 ```
 
+### Alternative: Taskcluster jobs (not yet built)
+
+A possible companion model is to run the collector inside dedicated Taskcluster
+jobs targeted at specific worker pools, with a small controller tool that
+enqueues the jobs, records their IDs, polls for completion, and pulls the
+envelope artifacts back. Useful for targeted sweeps ("benchmark every
+gecko_t_linux_talos host now, before/after this kernel change") rather than
+continuous drift detection.
+
+Tradeoffs noted but not yet committed work:
+
+- **Queue contention.** Benchmark jobs compete with real test traffic for
+  worker time; on a busy queue, hourly or even daily fleet sweeps could end
+  up waiting behind production work. The boot-throttle model sidesteps this
+  by slipping into a window where the worker is *not* taking tasks.
+- **Per-job overhead.** TC task scheduling, image pull, and log shipping for
+  what's a ~5 second benchmark is wasteful compared to direct invocation.
+- **Visibility cost.** Every benchmark becomes a TC entity that shows up in
+  task dashboards.
+
+A TC-driven invocation does not require a new runner — the existing
+`fleetbench-run` would just need a `taskcluster` value added to its
+`--trigger` enum and invocation from inside the task. Filing as a real
+beads task is deferred until someone needs the controlled-sweep capability.
+
 ## Issue Tracking
 
 Tasks live in `.beads/` via [beads_rust](https://github.com/Dicklesworthstone/beads_rust);
