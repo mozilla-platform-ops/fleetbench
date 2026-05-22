@@ -216,6 +216,36 @@ The release workflow that builds and publishes these is not yet implemented
 (tracked separately in beads). Until it exists, build locally via `./build`
 and scp / adb push manually as documented above.
 
+### Example TC task payload
+
+Once releases exist, a Taskcluster task can fetch and run the collector
+directly. Sketch for an Android worker (the motivating case — bitbar phones
+where Mozilla does not own the host OS layer):
+
+```yaml
+payload:
+  maxRunTime: 600
+  mounts:
+    - file: fleetbench
+      content:
+        url: https://github.com/<owner>/fleetbench/releases/download/v0.2.0/fleetbench-v0.2.0-android-aarch64
+        sha256: "<pinned-hash-from-SHA256SUMS>"
+  command:
+    - - /bin/sh
+      - -c
+      - "chmod 755 fleetbench && ./fleetbench cpu --mode quick --json > result.json"
+  artifacts:
+    - name: public/result.json
+      type: file
+      path: result.json
+```
+
+The same pattern applies on Linux and Windows TC workers — just swap the
+release asset URL for the matching platform. A downstream controller tool
+(see "Alternative: Taskcluster jobs" above) would enqueue these tasks,
+collect the `public/result.json` artifacts, and drop them into the same
+flat `results/` layout the runner uses.
+
 ## Issue Tracking
 
 Tasks live in `.beads/` via [beads_rust](https://github.com/Dicklesworthstone/beads_rust);
