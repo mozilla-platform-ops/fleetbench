@@ -1,13 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 pub const COLLECTOR_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Short git SHA of the commit this binary was built from, with `-dirty`
+/// appended if the working tree had uncommitted changes. Baked in by
+/// `build.rs`. Falls back to "unknown" when built outside a git checkout.
+pub const COLLECTOR_GIT_SHA: &str = env!("FLEETBENCH_GIT_SHA");
 pub const CPU_SUITE_VERSION: &str = "cpu-v0";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Output {
     pub schema_version: u32,
     pub collector_version: String,
+    pub collector_git_sha: String,
     pub cpu_suite_version: String,
     pub timestamp_utc: String,
     pub status: Status,
@@ -170,6 +175,7 @@ mod tests {
         let out = Output {
             schema_version: SCHEMA_VERSION,
             collector_version: COLLECTOR_VERSION.into(),
+            collector_git_sha: COLLECTOR_GIT_SHA.into(),
             cpu_suite_version: CPU_SUITE_VERSION.into(),
             timestamp_utc: "2026-05-20T00:00:00Z".into(),
             status: Status::Ok,
@@ -243,7 +249,8 @@ mod tests {
         };
 
         let v: serde_json::Value = serde_json::to_value(&out).unwrap();
-        assert_eq!(v["schema_version"], 4);
+        assert_eq!(v["schema_version"], 5);
+        assert!(v["collector_git_sha"].is_string());
         assert!(v.get("frequency_series").is_none(), "frequency_series must be omitted when unset");
         assert_eq!(v["cpu_suite_version"], "cpu-v0");
         assert_eq!(v["status"], "ok");
@@ -258,6 +265,7 @@ mod tests {
         let out = Output {
             schema_version: SCHEMA_VERSION,
             collector_version: COLLECTOR_VERSION.into(),
+            collector_git_sha: COLLECTOR_GIT_SHA.into(),
             cpu_suite_version: CPU_SUITE_VERSION.into(),
             timestamp_utc: "2026-05-20T00:00:00Z".into(),
             status: Status::Failed,

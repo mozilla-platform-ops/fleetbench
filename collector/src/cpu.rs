@@ -7,7 +7,8 @@ use crate::freq_sampler::Sampler;
 use crate::inspect::{collect_cpu, collect_host, current_timestamp_utc};
 use crate::schema::{
     Config, CpuInfo, Environment, ErrorInfo, FrequencySample, HostInfo, Output, PrimeSieve1t,
-    PrimeSieveMt, Results, Status, COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
+    PrimeSieveMt, Results, Status, COLLECTOR_GIT_SHA, COLLECTOR_VERSION, CPU_SUITE_VERSION,
+    SCHEMA_VERSION,
 };
 use crate::sieve;
 use crate::Mode;
@@ -177,6 +178,7 @@ fn build_output(
     Output {
         schema_version: SCHEMA_VERSION,
         collector_version: COLLECTOR_VERSION.into(),
+        collector_git_sha: COLLECTOR_GIT_SHA.into(),
         cpu_suite_version: CPU_SUITE_VERSION.into(),
         timestamp_utc: current_timestamp_utc(),
         status,

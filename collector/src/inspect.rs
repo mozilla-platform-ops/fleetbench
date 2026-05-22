@@ -1,7 +1,8 @@
 use sysinfo::System;
 
 use crate::schema::{
-    CpuInfo, HostInfo, Output, Status, COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
+    CpuInfo, HostInfo, Output, Status, COLLECTOR_GIT_SHA, COLLECTOR_VERSION, CPU_SUITE_VERSION,
+    SCHEMA_VERSION,
 };
 
 pub fn run(json: bool) -> i32 {
@@ -14,6 +15,7 @@ pub fn run(json: bool) -> i32 {
     let out = Output {
         schema_version: SCHEMA_VERSION,
         collector_version: COLLECTOR_VERSION.into(),
+        collector_git_sha: COLLECTOR_GIT_SHA.into(),
         cpu_suite_version: CPU_SUITE_VERSION.into(),
         timestamp_utc: current_timestamp_utc(),
         status: Status::Ok,

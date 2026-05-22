@@ -7,8 +7,15 @@ mod inspect;
 mod schema;
 mod sieve;
 
+const VERSION_STR: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("FLEETBENCH_GIT_SHA"),
+    ")",
+);
+
 #[derive(Parser)]
-#[command(name = "fleetbench", version, about)]
+#[command(name = "fleetbench", version = VERSION_STR, about)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
