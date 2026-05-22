@@ -46,6 +46,14 @@ enum Command {
         /// Time-bounded torture/stress mode. When set, loops the MT sieve
         /// until the duration elapses (skipping the 1t workload). Accepts
         /// bare seconds or human suffixes: `30s`, `10m`, `1h`.
+        ///
+        /// Interaction with --mode: --mode picks the per-iteration size
+        /// (prime_limit) and nothing else — the preset's iteration count is
+        /// ignored. For dense per-iteration timing across the run, use
+        /// `--mode quick` (each iteration ~tens of ms). `--mode long` still
+        /// works but produces only a handful of multi-second iterations,
+        /// which makes iteration-time drift a coarse signal; rely on
+        /// frequency_series for fine-grained throttle evidence in that case.
         #[arg(long, value_parser = parse_duration_arg)]
         duration: Option<u64>,
     },

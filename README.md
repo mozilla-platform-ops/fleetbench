@@ -38,6 +38,35 @@ detection. Use `--mode long` (pi(10⁹), 3 iterations) on hardware that fast
 to keep iterations comfortably above the noise floor. Slow phones and old
 fleet hardware are well-served by `normal`.
 
+### `--duration` (torture/stress mode)
+
+`--duration <30s|10m|1h>` switches the cpu subcommand into a time-bounded
+sustained-load run intended for thermal-throttle investigations — not the
+default fleet cadence. The MT sieve loops until the wall-clock duration
+elapses; the 1t workload is skipped so all cores stay hot continuously. A
+background sampler captures per-core CPU frequency at ~1Hz into the envelope
+as `frequency_series`, which is the direct signal for thermal throttling
+(boost-clock samples decaying toward base-clock over the run).
+
+**How `--mode` interacts with `--duration`.** This trips people up: in
+duration mode, `--mode` picks only the per-iteration size (`prime_limit`).
+The preset's iteration count is ignored — total iterations are whatever
+completes before the deadline. Reading `--mode long --duration 10m` as
+"the longest mode" produces a handful of multi-second iterations, not a
+denser long run.
+
+| `--mode` (with `--duration`) | per-iteration time on a fast NUC | iterations in 10 min |
+|---|---|---|
+| `quick` (pi(10⁷)) | ~15 ms | ~40,000 |
+| `normal` (pi(10⁸)) | ~150 ms | ~4,000 |
+| `long` (pi(10⁹)) | ~1.5 s | ~400 |
+
+For torture runs, `--mode quick --duration 10m` is the natural pairing — it
+gives a dense per-iteration time series alongside the 1Hz `frequency_series`.
+`--mode long` still works (`run_mt_until` guarantees at least one iteration)
+but iteration-time drift becomes a coarse signal; `frequency_series` carries
+the throttle evidence either way.
+
 Verified end-to-end:
 - **Linux**: smoke-tested on real fleet hosts (Xeon E3-1585L v5).
 - **macOS**: dev box (Apple Silicon M4 Pro); pi(10⁹) 1t in ~840 ms, mt in ~118 ms across 14 cores.
