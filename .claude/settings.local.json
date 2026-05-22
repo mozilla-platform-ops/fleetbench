@@ -6,7 +6,10 @@
       "Bash(br update *)",
       "Bash(cargo build *)",
       "Bash(cargo test *)",
-      "Bash(br dep *)"
+      "Bash(br dep *)",
+      "Bash(uv run pytest*)",
+      "Bash(br show *)",
+      "Bash(br search *)"
     ]
   }
 }
