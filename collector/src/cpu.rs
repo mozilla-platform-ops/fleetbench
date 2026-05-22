@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use sysinfo::System;
 
 use crate::env::sample_load;
@@ -39,6 +41,7 @@ pub fn run(
     threads_arg: &str,
     json: bool,
     warmup_enabled: bool,
+    duration_seconds: Option<u64>,
 ) -> i32 {
     let mut sys = System::new();
     sys.refresh_cpu_all();
@@ -64,14 +67,19 @@ pub fn run(
         }
     };
 
+    // In duration mode, the iterations count in the config is filled in after
+    // the run with what actually completed.
+    let config_iter_count = if duration_seconds.is_some() { 0 } else { iter_count };
+
     let config = Config {
         command: "cpu".into(),
         mode: preset.name.into(),
         prime_limit,
-        iterations: iter_count,
+        iterations: config_iter_count,
         threads,
         warmup_enabled,
         warmup_prime_limit: warmup_enabled.then_some(WARMUP_PRIME_LIMIT),
+        duration_seconds,
     };
 
     let load_pre_warmup = sample_load();
@@ -100,10 +108,22 @@ pub fn run(
 
     let load_pre_timed = sample_load();
 
-    let workload_result = run_workloads(prime_limit, iter_count, threads);
+    let workload_result = match duration_seconds {
+        Some(secs) => run_workloads_timed(prime_limit, threads, Duration::from_secs(secs)),
+        None => run_workloads(prime_limit, iter_count, threads),
+    };
 
     let load_post_timed = sample_load();
     let environment = Some(Environment { load_pre_warmup, load_pre_timed, load_post_timed });
+
+    let mut config = config;
+    if duration_seconds.is_some() {
+        if let Ok(ref r) = workload_result {
+            if let Some(mt) = &r.prime_sieve_mt {
+                config.iterations = mt.iterations.len() as u32;
+            }
+        }
+    }
 
     match workload_result {
         Ok(results) => {
@@ -203,6 +223,21 @@ fn run_workloads(limit: u64, iterations: u32, threads: u32) -> Result<Results, E
     })
 }
 
+/// Time-bounded sustained-load variant for surfacing thermal throttling.
+/// Skips the 1t workload to keep all cores hot continuously, then loops the
+/// MT sieve until `duration` elapses.
+fn run_workloads_timed(
+    limit: u64,
+    threads: u32,
+    duration: Duration,
+) -> Result<Results, ErrorInfo> {
+    let mt = sieve::run_mt_until(limit, threads, duration)?;
+    Ok(Results {
+        prime_sieve_1t: None,
+        prime_sieve_mt: Some(PrimeSieveMt { threads, iterations: mt }),
+    })
+}
+
 fn parse_threads(arg: &str, logical_cpus: u32) -> Result<u32, String> {
     if arg.eq_ignore_ascii_case("auto") {
         return Ok(logical_cpus.max(1));
@@ -223,6 +258,9 @@ fn print_human(out: &Output) {
         println!("prime_limit:    {}", cfg.prime_limit);
         println!("iterations:     {}", cfg.iterations);
         println!("threads:        {}", cfg.threads);
+        if let Some(d) = cfg.duration_seconds {
+            println!("duration_s:     {}", d);
+        }
     }
     if let Some(err) = &out.error {
         println!("error.kind:     {}", err.kind);

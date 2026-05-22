@@ -60,6 +60,11 @@ pub struct Config {
     pub warmup_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warmup_prime_limit: Option<u64>,
+    /// When set, the run is time-bounded: MT sieve loops until this many
+    /// seconds elapse, the 1t workload is skipped, and `iterations` reflects
+    /// the count actually completed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -165,6 +170,7 @@ mod tests {
                 threads: 32,
                 warmup_enabled: true,
                 warmup_prime_limit: Some(1_000_000),
+                duration_seconds: None,
             }),
             environment: Some(Environment {
                 load_pre_warmup: LoadSample {

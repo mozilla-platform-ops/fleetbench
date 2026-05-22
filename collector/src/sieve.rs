@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
@@ -153,6 +153,46 @@ fn count_primes_in_segment(seg_low: u64, limit: u64, base_primes: &[u64]) -> u64
     count
 }
 
+/// Run the MT sieve repeatedly until at least `duration` has elapsed.
+/// Always completes at least one iteration so even sub-iteration durations
+/// produce data.
+pub fn run_mt_until(
+    limit: u64,
+    threads: u32,
+    duration: Duration,
+) -> Result<Vec<PrimeIteration>, ErrorInfo> {
+    let expected = known_pi(limit);
+    let mut results = Vec::new();
+    let deadline = Instant::now() + duration;
+    let mut i: u32 = 0;
+
+    loop {
+        let start = Instant::now();
+        let prime_count = segmented_sieve_count_mt(limit, threads);
+        let seconds = start.elapsed().as_secs_f64();
+
+        if let Some(exp) = expected {
+            if prime_count != exp {
+                return Err(ErrorInfo {
+                    kind: "correctness_check_failed".into(),
+                    message: format!(
+                        "prime count mismatch for limit {limit} on iteration {i}: expected {exp}, got {prime_count}"
+                    ),
+                });
+            }
+        }
+
+        results.push(PrimeIteration { seconds, prime_count });
+        i = i.saturating_add(1);
+
+        if Instant::now() >= deadline {
+            break;
+        }
+    }
+
+    Ok(results)
+}
+
 pub fn run_mt(
     limit: u64,
     iterations: u32,
@@ -286,6 +326,21 @@ mod tests {
         for it in &r {
             assert_eq!(it.prime_count, 9_592);
         }
+    }
+
+    #[test]
+    fn run_mt_until_emits_at_least_one_iteration_for_short_duration() {
+        let r = run_mt_until(100_000, 2, Duration::from_millis(1)).unwrap();
+        assert!(!r.is_empty());
+        for it in &r {
+            assert_eq!(it.prime_count, 9_592);
+        }
+    }
+
+    #[test]
+    fn run_mt_until_runs_multiple_iterations_when_duration_allows() {
+        let r = run_mt_until(10_000, 2, Duration::from_millis(50)).unwrap();
+        assert!(r.len() >= 2, "expected multiple iterations, got {}", r.len());
     }
 
     #[test]
