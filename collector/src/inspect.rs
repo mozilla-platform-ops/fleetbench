@@ -22,6 +22,7 @@ pub fn run(json: bool) -> i32 {
         config: None,
         environment: None,
         results: None,
+        frequency_series: None,
         error: None,
     };
 

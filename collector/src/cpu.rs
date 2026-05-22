@@ -3,13 +3,16 @@ use std::time::Duration;
 use sysinfo::System;
 
 use crate::env::sample_load;
+use crate::freq_sampler::Sampler;
 use crate::inspect::{collect_cpu, collect_host, current_timestamp_utc};
 use crate::schema::{
-    Config, CpuInfo, Environment, ErrorInfo, HostInfo, Output, PrimeSieve1t, PrimeSieveMt,
-    Results, Status, COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
+    Config, CpuInfo, Environment, ErrorInfo, FrequencySample, HostInfo, Output, PrimeSieve1t,
+    PrimeSieveMt, Results, Status, COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
 };
 use crate::sieve;
 use crate::Mode;
+
+const FREQ_SAMPLE_INTERVAL: Duration = Duration::from_secs(1);
 
 const EXIT_OK: i32 = 0;
 const EXIT_RUNTIME_ERROR: i32 = 1;
@@ -100,6 +103,7 @@ pub fn run(
                 Some(config),
                 environment,
                 None,
+                None,
                 Some(err),
             );
             return emit(json, &out, exit);
@@ -108,10 +112,14 @@ pub fn run(
 
     let load_pre_timed = sample_load();
 
+    let sampler = duration_seconds.map(|_| Sampler::start(FREQ_SAMPLE_INTERVAL));
+
     let workload_result = match duration_seconds {
         Some(secs) => run_workloads_timed(prime_limit, threads, Duration::from_secs(secs)),
         None => run_workloads(prime_limit, iter_count, threads),
     };
+
+    let frequency_series: Option<Vec<FrequencySample>> = sampler.map(|s| s.stop());
 
     let load_post_timed = sample_load();
     let environment = Some(Environment { load_pre_warmup, load_pre_timed, load_post_timed });
@@ -127,7 +135,16 @@ pub fn run(
 
     match workload_result {
         Ok(results) => {
-            let out = build_output(Status::Ok, host, cpu, Some(config), environment, Some(results), None);
+            let out = build_output(
+                Status::Ok,
+                host,
+                cpu,
+                Some(config),
+                environment,
+                Some(results),
+                frequency_series,
+                None,
+            );
             emit(json, &out, EXIT_OK)
         }
         Err(err) => {
@@ -139,6 +156,7 @@ pub fn run(
                 Some(config),
                 environment,
                 None,
+                frequency_series,
                 Some(err),
             );
             emit(json, &out, exit)
@@ -153,6 +171,7 @@ fn build_output(
     config: Option<Config>,
     environment: Option<Environment>,
     results: Option<Results>,
+    frequency_series: Option<Vec<crate::schema::FrequencySample>>,
     error: Option<ErrorInfo>,
 ) -> Output {
     Output {
@@ -166,6 +185,7 @@ fn build_output(
         config,
         environment,
         results,
+        frequency_series,
         error,
     }
 }
@@ -178,7 +198,7 @@ fn emit_failure(
     error: ErrorInfo,
     exit_code: i32,
 ) -> i32 {
-    let out = build_output(Status::Failed, host, cpu, config, None, None, Some(error));
+    let out = build_output(Status::Failed, host, cpu, config, None, None, None, Some(error));
     emit(json, &out, exit_code)
 }
 

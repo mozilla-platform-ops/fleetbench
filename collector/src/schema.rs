@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 pub const COLLECTOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const CPU_SUITE_VERSION: &str = "cpu-v0";
 
@@ -21,8 +21,21 @@ pub struct Output {
     pub environment: Option<Environment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub results: Option<Results>,
+    /// Per-sample CPU frequency captured during a `--duration` run. Omitted
+    /// for fixed-iteration runs. Used to surface thermal throttling directly
+    /// (frequency decay over the run) rather than inferring it from
+    /// iteration-time drift alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_series: Option<Vec<FrequencySample>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FrequencySample {
+    pub t_offset_seconds: f64,
+    pub per_core_mhz: Vec<u32>,
+    pub mean_mhz: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -225,11 +238,13 @@ mod tests {
                     }],
                 }),
             }),
+            frequency_series: None,
             error: None,
         };
 
         let v: serde_json::Value = serde_json::to_value(&out).unwrap();
-        assert_eq!(v["schema_version"], 3);
+        assert_eq!(v["schema_version"], 4);
+        assert!(v.get("frequency_series").is_none(), "frequency_series must be omitted when unset");
         assert_eq!(v["cpu_suite_version"], "cpu-v0");
         assert_eq!(v["status"], "ok");
         assert!(v.get("error").is_none(), "error must be omitted on success");
@@ -251,6 +266,7 @@ mod tests {
             config: None,
             environment: None,
             results: None,
+            frequency_series: None,
             error: Some(ErrorInfo {
                 kind: "correctness_check_failed".into(),
                 message: "prime count mismatch".into(),

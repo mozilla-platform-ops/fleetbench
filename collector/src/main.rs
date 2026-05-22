@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 mod cpu;
 mod env;
+mod freq_sampler;
 mod inspect;
 mod schema;
 mod sieve;
