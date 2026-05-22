@@ -187,6 +187,35 @@ A TC-driven invocation does not require a new runner — the existing
 `--trigger` enum and invocation from inside the task. Filing as a real
 beads task is deferred until someone needs the controlled-sweep capability.
 
+## Distribution
+
+Binaries are intended to ship via **GitHub releases**, tagged per version.
+This is the primary distribution channel because:
+
+- Any Taskcluster task on any worker (including bitbar Android phones where
+  Mozilla does not own the host OS layer) can fetch a release asset directly.
+- Releases are immutable per tag, so cross-version benchmark comparisons
+  reference a stable build.
+- TC's `fetches` mechanism caches external URLs automatically.
+
+Release asset naming follows a templatable convention so task definitions
+can be written once and parameterized by version:
+
+```
+fleetbench-<version>-linux-x86_64
+fleetbench-<version>-windows-x86_64.exe
+fleetbench-<version>-macos-aarch64
+fleetbench-<version>-android-aarch64
+SHA256SUMS
+```
+
+A `SHA256SUMS` file alongside the binaries enables fetch-time integrity
+verification (`sha256sum -c`) and lets TC fetches pin a hash per asset.
+
+The release workflow that builds and publishes these is not yet implemented
+(tracked separately in beads). Until it exists, build locally via `./build`
+and scp / adb push manually as documented above.
+
 ## Issue Tracking
 
 Tasks live in `.beads/` via [beads_rust](https://github.com/Dicklesworthstone/beads_rust);
