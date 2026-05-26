@@ -1,0 +1,135 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match collector/Cargo.toml version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          CARGO_VER=$(grep '^version' collector/Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "tag: v${TAG}"
+          echo "cargo: ${CARGO_VER}"
+          if [ "$TAG" != "$CARGO_VER" ]; then
+            echo "::error::Tag v${TAG} does not match collector/Cargo.toml version ${CARGO_VER}"
+            exit 1
+          fi
+
+  build-linux-windows:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,x86_64-pc-windows-gnu
+      - uses: mlugg/setup-zig@v1
+      - name: Install cargo-zigbuild
+        run: cargo install --locked cargo-zigbuild
+      - name: Build linux (musl)
+        working-directory: collector
+        run: cargo zigbuild --release --target x86_64-unknown-linux-musl
+      - name: Build windows (gnu)
+        working-directory: collector
+        run: cargo zigbuild --release --target x86_64-pc-windows-gnu
+      - name: Stage artifacts
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          mkdir -p out
+          cp collector/target/x86_64-unknown-linux-musl/release/fleetbench \
+             "out/fleetbench-${VERSION}-linux-x86_64"
+          cp collector/target/x86_64-pc-windows-gnu/release/fleetbench.exe \
+             "out/fleetbench-${VERSION}-windows-x86_64.exe"
+          chmod +x "out/fleetbench-${VERSION}-linux-x86_64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-windows
+          path: out/
+          if-no-files-found: error
+
+  build-macos:
+    needs: verify-version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - name: Build macOS (aarch64)
+        working-directory: collector
+        run: cargo build --release --target aarch64-apple-darwin
+      - name: Stage artifact
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          mkdir -p out
+          cp collector/target/aarch64-apple-darwin/release/fleetbench \
+             "out/fleetbench-${VERSION}-macos-aarch64"
+          chmod +x "out/fleetbench-${VERSION}-macos-aarch64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: out/
+          if-no-files-found: error
+
+  build-android:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+      - name: Install cargo-ndk
+        run: cargo install --locked cargo-ndk
+      - name: Build Android (aarch64)
+        working-directory: collector
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: cargo ndk -t aarch64-linux-android -- build --release
+      - name: Stage artifact
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          mkdir -p out
+          cp collector/target/aarch64-linux-android/release/fleetbench \
+             "out/fleetbench-${VERSION}-android-aarch64"
+          chmod +x "out/fleetbench-${VERSION}-android-aarch64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/
+          if-no-files-found: error
+
+  release:
+    needs: [build-linux-windows, build-macos, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect binaries and compute SHA256SUMS
+        run: |
+          mkdir -p out
+          find artifacts -mindepth 2 -maxdepth 2 -type f -exec cp {} out/ \;
+          cd out
+          chmod +x fleetbench-*-linux-x86_64 fleetbench-*-macos-aarch64 fleetbench-*-android-aarch64
+          sha256sum * > SHA256SUMS
+          ls -la
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
