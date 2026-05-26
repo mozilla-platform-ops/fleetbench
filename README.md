@@ -67,6 +67,10 @@ gives a dense per-iteration time series alongside the 1Hz `frequency_series`.
 but iteration-time drift becomes a coarse signal; `frequency_series` carries
 the throttle evidence either way.
 
+For the full workflow — fetching the release binary, running a torture
+test, and reading the output to decide whether a host is throttling — see
+[`docs/DETECTING_THERMAL_THROTTLING.md`](docs/DETECTING_THERMAL_THROTTLING.md).
+
 Verified end-to-end:
 - **Linux**: smoke-tested on real fleet hosts (Xeon E3-1585L v5).
 - **macOS**: dev box (Apple Silicon M4 Pro); pi(10⁹) 1t in ~840 ms, mt in ~118 ms across 14 cores.
