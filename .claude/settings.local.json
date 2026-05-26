@@ -9,7 +9,9 @@
       "Bash(br dep *)",
       "Bash(uv run pytest*)",
       "Bash(br show *)",
-      "Bash(br search *)"
+      "Bash(br search *)",
+      "Bash(gh run *)",
+      "Bash(br list *)"
     ]
   }
 }
