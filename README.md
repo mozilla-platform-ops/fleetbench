@@ -69,7 +69,7 @@ the throttle evidence either way.
 
 For the full workflow — fetching the release binary, running a torture
 test, and reading the output to decide whether a host is throttling — see
-[`docs/DETECTING_THERMAL_THROTTLING.md`](docs/DETECTING_THERMAL_THROTTLING.md).
+[`docs/detecting_thermal_throttling.md`](docs/detecting_thermal_throttling.md).
 
 Verified end-to-end:
 - **Linux**: smoke-tested on real fleet hosts (Xeon E3-1585L v5).
