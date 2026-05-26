@@ -59,11 +59,16 @@ impl PdhFreqBackend {
             return Err(format!("PdhAddEnglishCounterW failed: 0x{:08x}", status));
         }
 
-        // Prime the counter — percentage counters return 0/garbage on the
-        // first collect because they need a delta window.
+        // Prime the counter — `% Processor Performance` needs a non-trivial
+        // delta window before it returns meaningful per-core values. Without
+        // this sleep the first user sample reads zeros on most cores because
+        // no perf-state transitions were observed between the two collects.
+        // Verified on i5-1340P: without sleep, t=0 sample shows [4243,0,0,0,
+        // 0,4257,4261,0,...]; with sleep, all cores report.
         unsafe {
             PdhCollectQueryData(query);
         }
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         Ok(Self { query, counter, base_mhz })
     }
