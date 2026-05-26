@@ -3,6 +3,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 mod cpu;
 mod env;
 mod freq_sampler;
+#[cfg(target_os = "windows")]
+mod freq_windows;
 mod inspect;
 mod schema;
 mod sieve;
