@@ -6,7 +6,7 @@
 //! the signal — the analysis layer computes any summary statistics.
 
 use std::fs;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -395,6 +395,18 @@ fn run_iterations(
     specs: &[ResolvedSize],
 ) -> Result<Vec<AdbIteration>, ErrorInfo> {
     let mut all = Vec::new();
+    let tty = std::io::stderr().is_terminal();
+
+    progress_line(tty, &format!(
+        "adb: device serial={} model={} sizes={}",
+        device.serial,
+        device.model,
+        specs
+            .iter()
+            .map(|s| format!("{}B×{}", s.bytes, s.iterations))
+            .collect::<Vec<_>>()
+            .join(",")
+    ));
 
     // Use a unique workspace under the system temp dir so concurrent
     // invocations don't collide on local paths.
@@ -406,6 +418,8 @@ fn run_iterations(
 
     for spec in specs {
         let n = spec.iterations as usize;
+        let size_label = format_size(spec.bytes);
+        progress_line(tty, &format!("adb: [{size_label}] generating {n} payloads"));
         // Pre-generate N unique local payloads to defeat page-cache reuse.
         let mut local_files: Vec<(PathBuf, [u8; 32])> = Vec::with_capacity(n);
         for i in 0..n {
@@ -418,7 +432,9 @@ fn run_iterations(
         }
 
         // PUSH timed loop.
+        progress_line(tty, &format!("adb: [{size_label}] pushing"));
         for (i, (path, expected_hash)) in local_files.iter().enumerate() {
+            progress_inplace(tty, &format!("adb: [{size_label}] push {}/{n}", i + 1));
             let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
             let t0 = Instant::now();
             let status = Command::new(adb)
@@ -458,9 +474,12 @@ fn run_iterations(
             });
         }
 
+        progress_inplace_done(tty);
         // PULL timed loop — pulls each previously-pushed remote file to a
         // distinct local path, verifies via local sha256.
+        progress_line(tty, &format!("adb: [{size_label}] pulling"));
         for (i, (_path, expected_hash)) in local_files.iter().enumerate() {
+            progress_inplace(tty, &format!("adb: [{size_label}] pull {}/{n}", i + 1));
             let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
             let local_pulled = work_dir.join(format!("pulled_{}_{i}.bin", spec.bytes));
             let t0 = Instant::now();
@@ -511,7 +530,9 @@ fn run_iterations(
             });
         }
 
+        progress_inplace_done(tty);
         // Cleanup remote files for this size.
+        progress_line(tty, &format!("adb: [{size_label}] cleanup"));
         for i in 0..n {
             let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
             let _ = Command::new(adb)
@@ -519,8 +540,56 @@ fn run_iterations(
                 .output();
         }
     }
+    progress_line(tty, "adb: done");
 
     Ok(all)
+}
+
+/// Writes a progress line to stderr. Always emitted, regardless of --json,
+/// because --json output goes to stdout. When stderr is a TTY, finishes any
+/// in-progress carriage-return line first so the new line doesn't get
+/// overwritten.
+fn progress_line(tty: bool, msg: &str) {
+    let mut err = std::io::stderr().lock();
+    if tty {
+        let _ = write!(err, "\r\x1b[2K");
+    }
+    let _ = writeln!(err, "{msg}");
+    let _ = err.flush();
+}
+
+/// In-place per-iteration counter. On a TTY uses CR + clear-line for live
+/// updates; on a pipe (e.g. captured logs) prints one line per call so the
+/// output is still useful, just chattier.
+fn progress_inplace(tty: bool, msg: &str) {
+    let mut err = std::io::stderr().lock();
+    if tty {
+        let _ = write!(err, "\r\x1b[2K{msg}");
+    } else {
+        let _ = writeln!(err, "{msg}");
+    }
+    let _ = err.flush();
+}
+
+/// Finalize an `progress_inplace` line by emitting a newline (TTY only).
+fn progress_inplace_done(tty: bool) {
+    if tty {
+        let mut err = std::io::stderr().lock();
+        let _ = writeln!(err);
+        let _ = err.flush();
+    }
+}
+
+fn format_size(n: u64) -> String {
+    if n >= 1024 * 1024 * 1024 && n % (1024 * 1024 * 1024) == 0 {
+        format!("{}G", n / (1024 * 1024 * 1024))
+    } else if n >= 1024 * 1024 && n % (1024 * 1024) == 0 {
+        format!("{}M", n / (1024 * 1024))
+    } else if n >= 1024 && n % 1024 == 0 {
+        format!("{}K", n / 1024)
+    } else {
+        format!("{n}B")
+    }
 }
 
 fn unique_workspace() -> std::io::Result<PathBuf> {
