@@ -1,8 +1,14 @@
 # Fleetbench
 
-A small cross-platform CPU benchmark collector for performance-testing fleets
+A small cross-platform benchmark collector for performance-testing fleets
 (pools of Taskcluster worker hosts that run Firefox perf tests), plus a
 Python runner that wraps it for use on those hosts.
+
+The collector currently ships two workloads — **CPU** (prime sieve, single-
+and multi-threaded) and **ADB I/O** (timed `adb push`/`pull` against an
+attached Android device) — alongside an `inspect` mode for host metadata.
+Both workloads emit the same envelope shape so a single analysis pipeline
+consumes them.
 
 Fleetbench produces raw per-iteration timings and host metadata as versioned
 JSON. It does not score hosts, compare across hardware classes, or maintain
@@ -27,6 +33,44 @@ the collected envelope files.
 |---|---|---|---|---|
 | Collector | shipped | binary cross-compiles, env sampling fields are null pending implementation | shipped (env block intentionally null — no `/proc` on Darwin) | shipped (env block populated; same `/proc/stat` + `/proc/loadavg` path as Linux) |
 | Runner    | shipped | deferred pending CPython availability question | works (dev) | not applicable — Android deploy model is different |
+
+## Subcommands
+
+The collector is a single binary (`fleetbench`) with three peer subcommands:
+
+| Subcommand | What it does | Where it runs | Output section |
+|---|---|---|---|
+| [`inspect`](#inspect-host-metadata) | Host + CPU metadata only, no workload | Any host | (just host/cpu, no `results`) |
+| [`cpu`](#cpu-benchmark-cpu) | Prime-sieve workload (1t + MT), optional time-bounded torture mode with per-core frequency sampling | Any host (Linux/Windows/macOS/Android) | `results.prime_sieve_1t` / `results.prime_sieve_mt` (+ `frequency_series` in `--duration` mode) |
+| [`adb`](#adb-io-benchmark-adb) | Times `adb push` / `adb pull` against an attached Android device; pre-generated random payloads, SHA256-verified per iteration | Linux/macOS host that has `adb` and a phone attached — **not** the phone itself | `adb_results.iterations` |
+
+Every invocation emits a single JSON envelope with the same top-level shape
+(`schema_version`, `host`, `environment`, plus suite-specific `*_config`,
+`*_env`, and `*_results` siblings). Downstream tools branch on which
+`*_config` block is present.
+
+### `inspect` (host metadata)
+
+```bash
+fleetbench inspect           # human-readable
+fleetbench inspect --json    # envelope with host/cpu populated, no workload
+```
+
+Useful as a quick "what is this host?" check, and as a smoke test that the
+binary runs on the target at all before kicking off a workload.
+
+## CPU benchmark (`cpu`)
+
+The default fleet workload: a prime-sieve up to `prime_limit`, run both
+single-threaded and across all cores. Calibrated for per-iteration timings
+above the noise floor on slow-x86 fleet hardware.
+
+```bash
+fleetbench cpu --json                      # --mode normal, all logical CPUs
+fleetbench cpu --mode quick --json         # CI / dev cycles
+fleetbench cpu --mode long --json          # fast hardware
+fleetbench cpu --mode quick --duration 10m --json   # torture / throttle hunt
+```
 
 ### Choosing a mode
 
@@ -71,7 +115,7 @@ For the full workflow — fetching the release binary, running a torture
 test, and reading the output to decide whether a host is throttling — see
 [`docs/detecting_thermal_throttling.md`](docs/detecting_thermal_throttling.md).
 
-### `adb` (device file-copy I/O benchmark)
+## ADB I/O benchmark (`adb`)
 
 `fleetbench adb` times `adb push` and `adb pull` against an attached Android
 device. It runs on the Linux Docker host where `adb` lives, not on the device
@@ -122,20 +166,25 @@ Operational model:
   hosts the full `lsusb -t` topology is captured for hub-path correlation
   across concurrent invocations.
 
-The envelope uses the same top-level shape as `cpu`: `schema_version`, `host`,
-`environment`, plus suite-specific siblings (`adb_config`, `adb_env`,
-`adb_results`). Downstream analysis branches on which `*_config` is present.
+## Verified end-to-end
 
-Verified end-to-end:
+`cpu`:
 - **Linux**: smoke-tested on real fleet hosts (Xeon E3-1585L v5).
 - **macOS**: dev box (Apple Silicon M4 Pro); pi(10⁹) 1t in ~840 ms, mt in ~118 ms across 14 cores.
 - **Android**: Pixel 10 Pro via `adb push`. See [`docs/analysis_notes.md`](docs/analysis_notes.md)
   for Android-specific behavior the analysis layer needs to know about
   (governor ramp, big.LITTLE + thermal throttling, non-zero idle load averages).
 
-Caveats:
+`adb`:
+- **macOS**: dev box; clean `no_device` envelope with `adb --version` captured.
+- **Linux + real phone**: pending validation on a bitbar/LT-style Docker host
+  before the beads issue is closed.
+
+## Caveats
+
 - `cpu.frequency_mhz` is `null` on macOS — Apple Silicon doesn't expose a single meaningful peak frequency and sysinfo's value is unreliable, so we deliberately drop it rather than emit a misleading number.
 - `cpu.brand` is null on Android (sysinfo doesn't parse the SoC name from `/proc/cpuinfo` on ARM); workaround if needed: parse it directly.
+- `adb_env.lsusb_topology` is only captured on Linux hosts (no `lsusb` on macOS/Windows).
 
 ## Build
 
