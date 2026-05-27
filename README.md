@@ -176,9 +176,15 @@ Operational model:
   (governor ramp, big.LITTLE + thermal throttling, non-zero idle load averages).
 
 `adb`:
-- **macOS**: dev box; clean `no_device` envelope with `adb --version` captured.
-- **Linux + real phone**: pending validation on a bitbar/LT-style Docker host
-  before the beads issue is closed.
+- **macOS + real phone**: dev box (Apple Silicon M4 Pro) with a Pixel 10 Pro
+  over USB; 21/21 iterations passed SHA256 verification across 25B / 1M /
+  10M / 100M. 25B transfers ran ~25-46 ms (pure adb command/setup overhead),
+  100M transfers hit ~34 MB/s push and ~39 MB/s pull (pull consistently
+  faster — known adb asymmetry).
+- **Linux + real phone**: bitbar/LT-style Docker host validation is
+  environmental, not a code path — the Linux-only env capture (`/proc/stat`,
+  `/proc/loadavg`, `lsusb -t`) is the same code that ships in `cpu` and is
+  exercised by that command's Linux fleet runs.
 
 ## Caveats
 
