@@ -22,8 +22,11 @@ pub fn run(json: bool) -> i32 {
         host,
         cpu,
         config: None,
+        adb_config: None,
         environment: None,
+        adb_env: None,
         results: None,
+        adb_results: None,
         frequency_series: None,
         error: None,
     };

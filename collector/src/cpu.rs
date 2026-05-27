@@ -185,8 +185,11 @@ fn build_output(
         host,
         cpu,
         config,
+        adb_config: None,
         environment,
+        adb_env: None,
         results,
+        adb_results: None,
         frequency_series,
         error,
     }

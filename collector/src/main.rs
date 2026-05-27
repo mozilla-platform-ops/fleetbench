@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
+mod adb;
 mod cpu;
 mod env;
 mod freq_sampler;
@@ -83,6 +84,40 @@ enum Command {
         #[arg(long, value_parser = parse_duration_arg)]
         duration: Option<u64>,
     },
+    /// Time adb push/pull to/from an attached Android device.
+    ///
+    /// Production unit = one invocation, one device. Pre-generates unique
+    /// random payloads per size before the timed section (defeats page-cache
+    /// reuse), runs push and pull as separate timed loops, and verifies each
+    /// transfer with SHA256. Per-iteration timings are emitted raw; the
+    /// distribution is the signal, not the mean. Run multiple invocations
+    /// concurrently at the orchestrator layer to observe USB contention.
+    Adb {
+        /// Device serial to target. Required if more than one device is
+        /// attached.
+        #[arg(long)]
+        serial: Option<String>,
+        /// Path to the adb binary. Defaults to "adb" via PATH.
+        #[arg(long)]
+        adb_path: Option<String>,
+        /// Remote directory on the device for the timed transfers. Defaults
+        /// to /data/local/tmp/ (avoids the FUSE layer on /sdcard for a
+        /// cleaner USB/adb signal). Use /sdcard/Download to reproduce
+        /// raptor's path.
+        #[arg(long, default_value = "/data/local/tmp/")]
+        remote_path: String,
+        /// Comma-separated sizes (e.g. "25B,1M,10M,100M"). Defaults to all
+        /// four. Suffixes: B (bytes), K (KiB), M (MiB), G (GiB).
+        #[arg(long)]
+        sizes: Option<String>,
+        /// Per-size iteration count override, KEY=VALUE list
+        /// (e.g. "25B=50,1M=20"). Defaults baked in per size:
+        /// 25B=200, 1M=100, 10M=30, 100M=10.
+        #[arg(long)]
+        iterations: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn parse_duration_arg(s: &str) -> Result<u64, String> {
@@ -146,6 +181,9 @@ fn main() {
         Command::Inspect { json } => inspect::run(json),
         Command::Cpu { mode, limit, iterations, threads, json, no_warmup, duration } => {
             cpu::run(mode, limit, iterations, &threads, json, !no_warmup, duration)
+        }
+        Command::Adb { serial, adb_path, remote_path, sizes, iterations, json } => {
+            adb::run(adb_path, serial, remote_path, sizes, iterations, json)
         }
     };
     std::process::exit(exit_code);

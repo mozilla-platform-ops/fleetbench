@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 pub const COLLECTOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Short git SHA of the commit this binary was built from, with `-dirty`
 /// appended if the working tree had uncommitted changes. Baked in by
 /// `build.rs`. Falls back to "unknown" when built outside a git checkout.
 pub const COLLECTOR_GIT_SHA: &str = env!("FLEETBENCH_GIT_SHA");
 pub const CPU_SUITE_VERSION: &str = "cpu-v0";
+pub const ADB_SUITE_VERSION: &str = "adb-v0";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Output {
@@ -23,9 +24,15 @@ pub struct Output {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<Config>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub adb_config: Option<AdbConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub environment: Option<Environment>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub adb_env: Option<AdbEnv>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub results: Option<Results>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adb_results: Option<AdbResults>,
     /// Per-sample CPU frequency captured during a `--duration` run. Omitted
     /// for fixed-iteration runs. Used to surface thermal throttling directly
     /// (frequency decay over the run) rather than inferring it from
@@ -146,6 +153,48 @@ pub struct ErrorInfo {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdbConfig {
+    pub command: String,
+    pub adb_path: String,
+    pub serial: Option<String>,
+    pub remote_path: String,
+    pub sizes: Vec<AdbSizeSpec>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdbSizeSpec {
+    pub size_bytes: u64,
+    pub iterations: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdbEnv {
+    pub adb_version: Option<String>,
+    /// `lsusb -t` output captured on Linux hosts; None on other platforms or
+    /// when lsusb is unavailable.
+    pub lsusb_topology: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdbResults {
+    pub iterations: Vec<AdbIteration>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdbIteration {
+    pub device_serial: String,
+    pub device_model: String,
+    /// Logical USB hub path (e.g. extracted from `lsusb -t`) when available.
+    pub hub_path: Option<String>,
+    pub size_bytes: u64,
+    /// "push" (host → device) or "pull" (device → host).
+    pub direction: String,
+    pub bytes_per_sec: f64,
+    pub elapsed_ms: f64,
+    pub sha256_ok: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,12 +293,15 @@ mod tests {
                     }],
                 }),
             }),
+            adb_config: None,
+            adb_env: None,
+            adb_results: None,
             frequency_series: None,
             error: None,
         };
 
         let v: serde_json::Value = serde_json::to_value(&out).unwrap();
-        assert_eq!(v["schema_version"], 5);
+        assert_eq!(v["schema_version"], 6);
         assert!(v["collector_git_sha"].is_string());
         assert!(v.get("frequency_series").is_none(), "frequency_series must be omitted when unset");
         assert_eq!(v["cpu_suite_version"], "cpu-v0");
@@ -272,8 +324,11 @@ mod tests {
             host: sample_host(),
             cpu: sample_cpu(),
             config: None,
+            adb_config: None,
             environment: None,
+            adb_env: None,
             results: None,
+            adb_results: None,
             frequency_series: None,
             error: Some(ErrorInfo {
                 kind: "correctness_check_failed".into(),
