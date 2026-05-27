@@ -71,6 +71,61 @@ For the full workflow — fetching the release binary, running a torture
 test, and reading the output to decide whether a host is throttling — see
 [`docs/detecting_thermal_throttling.md`](docs/detecting_thermal_throttling.md).
 
+### `adb` (device file-copy I/O benchmark)
+
+`fleetbench adb` times `adb push` and `adb pull` against an attached Android
+device. It runs on the Linux Docker host where `adb` lives, not on the device
+itself — the goal is to characterize USB/adb behavior (the path raptor sees
+when staging APKs and test files), and to debug "why is provisioning slow
+today?" style problems across vendors (e.g. bitbar vs LambdaTest).
+
+```bash
+fleetbench adb --json                                  # all defaults
+fleetbench adb --serial <id> --json                    # multi-device host
+fleetbench adb --sizes 25B,1M --iterations 25B=50,1M=20 --json
+fleetbench adb --remote-path /sdcard/Download --json   # reproduce raptor's path
+```
+
+Operational model:
+
+- **One invocation, one device.** Contention is observed by running many
+  invocations concurrently at the Taskcluster layer — that matches how real
+  tests behave. There is no in-collector `--parallel` mode.
+- **Target selection.** With one device attached, no flag is needed. With
+  multiple, pass `--serial`; otherwise the run fails with `multiple_devices`.
+- **Remote path.** Defaults to `/data/local/tmp/` to avoid the FUSE layer on
+  `/sdcard` for a cleaner USB/adb signal. Use `--remote-path /sdcard/Download`
+  when the goal is to reproduce raptor's path exactly.
+- **Payloads.** For each size, N unique random files are generated up front
+  (xorshift64 fill) so the kernel page cache can't quietly accelerate later
+  iterations. Pre-generation happens before the timed section.
+- **Verification.** Push is checked via `adb shell sha256sum`; pull is checked
+  by hashing the file locally. A failed hash sets `sha256_ok = false` on that
+  iteration and exits non-zero (`exit 2`, correctness failure).
+- **Sizes & iterations.** Defaults emphasize the 25-byte point (where vendor
+  variance shows up — that workload is dominated by command/setup overhead,
+  not bytes on the wire), then progressively larger transfers:
+
+| size | default iterations | what it measures |
+|---|---|---|
+| 25B  | 200 | adb command/setup latency (no real bytes on wire) |
+| 1M   | 100 | small-transfer steady state |
+| 10M  | 30  | mid-transfer steady state |
+| 100M | 10  | bulk-transfer USB throughput ceiling |
+
+  Override iterations per size via `--iterations 25B=50,1M=20,...`.
+- **Output.** Per-iteration timings are emitted raw — no median/IQR/summary.
+  The distribution is the signal; the mean often is not. (In a 100-retrigger
+  bitbar-vs-LT comparison, LT's mean was *lower* but its distribution width
+  was 4-5× wider; that's the kind of thing this subcommand surfaces.)
+- **Env capture.** `adb --version` is recorded in `adb_env`, and on Linux
+  hosts the full `lsusb -t` topology is captured for hub-path correlation
+  across concurrent invocations.
+
+The envelope uses the same top-level shape as `cpu`: `schema_version`, `host`,
+`environment`, plus suite-specific siblings (`adb_config`, `adb_env`,
+`adb_results`). Downstream analysis branches on which `*_config` is present.
+
 Verified end-to-end:
 - **Linux**: smoke-tested on real fleet hosts (Xeon E3-1585L v5).
 - **macOS**: dev box (Apple Silicon M4 Pro); pi(10⁹) 1t in ~840 ms, mt in ~118 ms across 14 cores.
