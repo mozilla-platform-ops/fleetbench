@@ -158,6 +158,14 @@ Operational model:
 | 100M | 10  | bulk-transfer USB throughput ceiling |
 
   Override iterations per size via `--iterations 25B=50,1M=20,...`.
+
+  A full default run does ~720 timed transfers and takes **10-30 minutes** on a
+  real device (longer on slow USB hubs). For a quick smoke test:
+
+  ```bash
+  fleetbench adb --iterations 25B=5,1M=2,10M=2,100M=1 --json
+  ```
+
 - **Output.** Per-iteration timings are emitted raw — no median/IQR/summary.
   The distribution is the signal; the mean often is not. (In a 100-retrigger
   bitbar-vs-LT comparison, LT's mean was *lower* but its distribution width
