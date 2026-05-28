@@ -134,6 +134,14 @@ def main() -> int:
             log(f"auto-picked {AUTO_PICK} adb device: {serial}")
             # Insert after the subcommand (e.g. 'adb') so flag placement is sane.
             args = [args[0], "--serial", serial, *args[1:]]
+        else:
+            # AUTO_PICK was explicit but no matching device — fail loudly rather
+            # than silently fall back to whatever fleetbench picks on its own
+            # (e.g. running USB when the operator asked for TCP).
+            sys.exit(
+                f"FLEETBENCH_AUTO_PICK={AUTO_PICK!r} but no {AUTO_PICK} adb device "
+                f"found; set FLEETBENCH_AUTO_PICK=off to disable this check"
+            )
     elif AUTO_PICK not in ("usb", "tcp", "off", ""):
         log(f"FLEETBENCH_AUTO_PICK={AUTO_PICK!r} not in (usb, tcp, off); skipping")
 
