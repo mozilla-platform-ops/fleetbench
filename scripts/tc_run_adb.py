@@ -30,11 +30,14 @@ FLEETBENCH_ARGS = os.environ.get(
     "FLEETBENCH_ARGS",
     "adb --iterations 25B=5,1M=2,10M=2,100M=1 --json",
 )
-# When set (default), auto-pick the TCP-attached adb device and inject --serial
-# into FLEETBENCH_ARGS if it doesn't already specify one. Workaround for LT
-# hosts having both a USB and a TCP adb device — see fleetbench beads ticket
-# fleetbench-adb-transport-capture-filter-cf1 for the durable in-collector fix.
-AUTO_PICK_TCP = os.environ.get("FLEETBENCH_AUTO_PICK_TCP", "1") == "1"
+# On hosts where 'adb devices' returns both a USB serial and a TCP endpoint
+# (LambdaTest), auto-pick one transport and inject --serial. Default is 'usb'
+# to match what raptor's Speedometer 3 jobs use (apples-to-apples with the
+# existing perfherder series); set 'tcp' to deliberately measure the network
+# path instead, or 'off' to disable auto-pick. Skipped entirely if
+# FLEETBENCH_ARGS already specifies --serial. Workaround for beads ticket
+# fleetbench-adb-transport-capture-filter-cf1.
+AUTO_PICK = os.environ.get("FLEETBENCH_AUTO_PICK", "usb").lower()
 TCP_SERIAL_RE = re.compile(r"^\d+\.\d+\.\d+\.\d+:\d+$")
 
 
@@ -56,12 +59,12 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def pick_tcp_serial() -> str | None:
-    """Return the single TCP-attached adb device serial, or None.
+def pick_serial(transport: str) -> str | None:
+    """Return the single adb device serial matching the requested transport.
 
-    Parses `adb devices` looking for entries shaped like `<ip>:<port>` in the
-    'device' state. Returns None if none found, exits if multiple TCP devices
-    are present (ambiguous — caller should pass --serial explicitly).
+    transport: 'usb' or 'tcp'. Parses `adb devices` and returns the matching
+    serial if exactly one is present. Returns None if none match. Exits if
+    multiple match (ambiguous — caller should pass --serial explicitly).
     """
     try:
         out = subprocess.run(
@@ -70,16 +73,19 @@ def pick_tcp_serial() -> str | None:
     except (FileNotFoundError, subprocess.CalledProcessError) as e:
         log(f"adb devices failed; skipping auto-pick: {e}")
         return None
-    tcp = []
+    matches = []
     for line in out.splitlines()[1:]:  # skip 'List of devices attached'
         parts = line.split()
-        if len(parts) >= 2 and parts[1] == "device" and TCP_SERIAL_RE.match(parts[0]):
-            tcp.append(parts[0])
-    if not tcp:
+        if len(parts) < 2 or parts[1] != "device":
+            continue
+        is_tcp = bool(TCP_SERIAL_RE.match(parts[0]))
+        if (transport == "tcp" and is_tcp) or (transport == "usb" and not is_tcp):
+            matches.append(parts[0])
+    if not matches:
         return None
-    if len(tcp) > 1:
-        sys.exit(f"multiple TCP adb devices: {tcp}; pass --serial explicitly")
-    return tcp[0]
+    if len(matches) > 1:
+        sys.exit(f"multiple {transport} adb devices: {matches}; pass --serial explicitly")
+    return matches[0]
 
 
 def verify_sha256(binary: Path, sums_file: Path) -> None:
@@ -122,12 +128,14 @@ def main() -> int:
     log(f"binary: {version_out}")
 
     args = shlex.split(FLEETBENCH_ARGS)
-    if AUTO_PICK_TCP and "--serial" not in args:
-        tcp_serial = pick_tcp_serial()
-        if tcp_serial:
-            log(f"auto-picked TCP adb device: {tcp_serial}")
+    if AUTO_PICK in ("usb", "tcp") and "--serial" not in args:
+        serial = pick_serial(AUTO_PICK)
+        if serial:
+            log(f"auto-picked {AUTO_PICK} adb device: {serial}")
             # Insert after the subcommand (e.g. 'adb') so flag placement is sane.
-            args = [args[0], "--serial", tcp_serial, *args[1:]]
+            args = [args[0], "--serial", serial, *args[1:]]
+    elif AUTO_PICK not in ("usb", "tcp", "off", ""):
+        log(f"FLEETBENCH_AUTO_PICK={AUTO_PICK!r} not in (usb, tcp, off); skipping")
 
     output = upload_dir / "fleetbench-adb.json"
     err_log = upload_dir / "fleetbench-adb.log"
