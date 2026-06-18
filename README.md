@@ -123,6 +123,9 @@ itself — the goal is to characterize USB/adb behavior (the path raptor sees
 when staging APKs and test files), and to debug "why is provisioning slow
 today?" style problems across vendors (e.g. bitbar vs LambdaTest).
 
+For the background, design rationale, and the original developer test this
+reproduces, see [`docs/ADB_TESTING.md`](docs/ADB_TESTING.md).
+
 ```bash
 fleetbench adb --json                                  # all defaults
 fleetbench adb --serial <id> --json                    # multi-device host
