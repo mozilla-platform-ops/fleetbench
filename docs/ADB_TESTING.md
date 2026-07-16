@@ -165,7 +165,10 @@ cleanly surfaced a ~100× performance difference with only n=2–5 per size.
 ## Per-iteration output
 
 Each timed transfer emits: device serial, device model, hub path (lsusb), file
-size, direction (push/pull), bytes/sec, `elapsed_ms`, `sha256_ok`. These land in
+size, direction (push/pull), transfer start/end timestamps in UTC with
+microsecond precision, bytes/sec, `elapsed_ms`, `sha256_ok`. The timestamps
+bracket only the timed `adb push`/`pull` subprocess, so independently scheduled
+workers can be correlated by actual transfer overlap. These land in
 `adb_results.iterations` in a schema-compatible envelope
 (`schema_version`, `host`, `env`, `config`, `results` siblings:
 `adb_config` / `adb_env` / `adb_results`).

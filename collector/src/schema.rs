@@ -190,6 +190,11 @@ pub struct AdbIteration {
     pub size_bytes: u64,
     /// "push" (host → device) or "pull" (device → host).
     pub direction: String,
+    /// UTC timestamp immediately before the timed adb push/pull subprocess.
+    /// Payload generation and checksum verification are excluded.
+    pub transfer_started_at_utc: Option<String>,
+    /// UTC timestamp immediately after the timed adb push/pull subprocess.
+    pub transfer_finished_at_utc: Option<String>,
     pub bytes_per_sec: f64,
     pub elapsed_ms: f64,
     pub sha256_ok: bool,

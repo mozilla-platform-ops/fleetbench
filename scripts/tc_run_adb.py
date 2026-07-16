@@ -30,6 +30,10 @@ FLEETBENCH_ARGS = os.environ.get(
     "FLEETBENCH_ARGS",
     "adb --iterations 25B=5,1M=2,10M=2,100M=1 --json",
 )
+# Number of complete collector invocations to run within this one TC task.
+# Values above one are useful for saturation experiments: launch one long-lived
+# task per reserved device and let the per-device loops overlap naturally.
+FLEETBENCH_RUNS = os.environ.get("FLEETBENCH_RUNS", "1")
 # On hosts where 'adb devices' returns both a USB serial and a TCP endpoint
 # (LambdaTest), auto-pick one transport and inject --serial. Default is 'usb'
 # to match what raptor's Speedometer 3 jobs use (apples-to-apples with the
@@ -106,6 +110,13 @@ def verify_sha256(binary: Path, sums_file: Path) -> None:
 def main() -> int:
     upload_dir = Path(os.environ.get("MOZ_UPLOAD_DIR", Path.cwd() / "out")).resolve()
     work_dir = Path(os.environ.get("TASK_WORKDIR", tempfile.mkdtemp())).resolve()
+    try:
+        runs = int(FLEETBENCH_RUNS)
+    except ValueError:
+        sys.exit(f"FLEETBENCH_RUNS={FLEETBENCH_RUNS!r} is not a positive integer")
+    if runs < 1:
+        sys.exit(f"FLEETBENCH_RUNS={FLEETBENCH_RUNS!r} must be at least 1")
+
     upload_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -145,19 +156,25 @@ def main() -> int:
     elif AUTO_PICK not in ("usb", "tcp", "off", ""):
         log(f"FLEETBENCH_AUTO_PICK={AUTO_PICK!r} not in (usb, tcp, off); skipping")
 
-    output = upload_dir / "fleetbench-adb.json"
-    err_log = upload_dir / "fleetbench-adb.log"
     cmd = [str(binary), *args]
 
-    log(f"running: {' '.join(shlex.quote(c) for c in cmd)}")
-    log(f"stdout -> {output}")
-    log(f"stderr -> {err_log}")
+    for run_index in range(1, runs + 1):
+        suffix = "" if runs == 1 else f"-{run_index:03d}"
+        output = upload_dir / f"fleetbench-adb{suffix}.json"
+        err_log = upload_dir / f"fleetbench-adb{suffix}.log"
 
-    with output.open("wb") as out_f, err_log.open("wb") as err_f:
-        rc = subprocess.call(cmd, stdout=out_f, stderr=err_f)
+        log(f"run {run_index}/{runs}: {' '.join(shlex.quote(c) for c in cmd)}")
+        log(f"stdout -> {output}")
+        log(f"stderr -> {err_log}")
 
-    log(f"exit {rc}, artifact size: {output.stat().st_size} bytes")
-    return rc
+        with output.open("wb") as out_f, err_log.open("wb") as err_f:
+            rc = subprocess.call(cmd, stdout=out_f, stderr=err_f)
+
+        log(f"run {run_index}/{runs}: exit {rc}, artifact size: {output.stat().st_size} bytes")
+        if rc:
+            return rc
+
+    return 0
 
 
 if __name__ == "__main__":

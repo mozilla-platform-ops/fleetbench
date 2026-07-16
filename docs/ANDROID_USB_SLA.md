@@ -141,7 +141,8 @@ The vendor's acceptance report must include:
   link.
 - Total devices installed on the host, the agreed peak concurrent-transfer
   load, and the number actively transferring in each test step.
-- Raw per-iteration Fleetbench JSON, not only aggregate averages.
+- Raw per-iteration Fleetbench JSON, including transfer start/end timestamps,
+  not only aggregate averages.
 - Per-device and per-direction p50, p95, p99, maximum, and bulk throughput.
 - Per-device and aggregate throughput at each tested concurrency level.
 - All disconnects, retries, checksum failures, and excluded samples.

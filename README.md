@@ -179,6 +179,20 @@ Operational model:
   hosts the full `lsusb -t` topology is captured for hub-path correlation
   across concurrent invocations.
 
+### Saturation runs in Taskcluster
+
+For a shared-host USB saturation experiment, reserve one device per Taskcluster
+job and run one long-lived job per device concurrently. Set
+`FLEETBENCH_AUTO_PICK=usb` so mixed USB/TCP hosts cannot silently select the
+network endpoint, and set `FLEETBENCH_RUNS=<N>` in `scripts/tc_run_adb.py` to
+repeat the complete collector invocation within each job. With `N > 1`, the
+wrapper writes `fleetbench-adb-001.json`, `fleetbench-adb-002.json`, and so on,
+plus matching logs; `N = 1` preserves the existing `fleetbench-adb.json` name.
+
+Each iteration records precise transfer start/end timestamps. Use those windows,
+not Taskcluster task start times, to select intervals where transfers from
+multiple devices truly overlapped.
+
 ## Verified end-to-end
 
 `cpu`:

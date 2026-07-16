@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use chrono::{SecondsFormat, Utc};
 use sha2::{Digest, Sha256};
 use sysinfo::System;
 
@@ -41,10 +42,22 @@ struct SizeDefault {
 }
 
 const DEFAULT_SIZES: &[SizeDefault] = &[
-    SizeDefault { bytes: 25, iterations: 200 },
-    SizeDefault { bytes: 1024 * 1024, iterations: 100 },
-    SizeDefault { bytes: 10 * 1024 * 1024, iterations: 30 },
-    SizeDefault { bytes: 100 * 1024 * 1024, iterations: 10 },
+    SizeDefault {
+        bytes: 25,
+        iterations: 200,
+    },
+    SizeDefault {
+        bytes: 1024 * 1024,
+        iterations: 100,
+    },
+    SizeDefault {
+        bytes: 10 * 1024 * 1024,
+        iterations: 30,
+    },
+    SizeDefault {
+        bytes: 100 * 1024 * 1024,
+        iterations: 10,
+    },
 ];
 
 pub fn run(
@@ -72,7 +85,10 @@ pub fn run(
                 cpu,
                 None,
                 None,
-                ErrorInfo { kind: ERR_INVALID_ARGUMENTS.into(), message: msg },
+                ErrorInfo {
+                    kind: ERR_INVALID_ARGUMENTS.into(),
+                    message: msg,
+                },
                 EXIT_RUNTIME_ERROR,
             );
         }
@@ -92,14 +108,20 @@ pub fn run(
         remote_path: remote_dir.clone(),
         sizes: specs
             .iter()
-            .map(|s| AdbSizeSpec { size_bytes: s.bytes, iterations: s.iterations })
+            .map(|s| AdbSizeSpec {
+                size_bytes: s.bytes,
+                iterations: s.iterations,
+            })
             .collect(),
     };
 
     // Capture adb --version and lsusb topology up front.
     let adb_version = capture_adb_version(&adb_bin);
     let lsusb_topology = capture_lsusb_topology();
-    let adb_env = AdbEnv { adb_version: adb_version.clone(), lsusb_topology: lsusb_topology.clone() };
+    let adb_env = AdbEnv {
+        adb_version: adb_version.clone(),
+        lsusb_topology: lsusb_topology.clone(),
+    };
 
     if adb_version.is_none() {
         return emit_failure(
@@ -131,7 +153,11 @@ pub fn run(
     let run_result = run_iterations(&adb_bin, &device, &remote_dir, &specs);
 
     let load_post_timed = sample_load();
-    let environment = Some(Environment { load_pre_warmup, load_pre_timed, load_post_timed });
+    let environment = Some(Environment {
+        load_pre_warmup,
+        load_pre_timed,
+        load_post_timed,
+    });
 
     match run_result {
         Ok(iterations) => {
@@ -141,7 +167,11 @@ pub fn run(
                 kind: ERR_CORRECTNESS_CHECK_FAILED.into(),
                 message: "one or more iterations failed sha256 verification".into(),
             });
-            let exit_code = if any_bad { EXIT_CORRECTNESS_FAILED } else { EXIT_OK };
+            let exit_code = if any_bad {
+                EXIT_CORRECTNESS_FAILED
+            } else {
+                EXIT_OK
+            };
             let out = build_output(
                 status,
                 host,
@@ -215,7 +245,10 @@ fn resolve_specs(
                 size.bytes
             ));
         }
-        resolved.push(ResolvedSize { bytes: size.bytes, iterations: iters });
+        resolved.push(ResolvedSize {
+            bytes: size.bytes,
+            iterations: iters,
+        });
     }
     Ok(resolved)
 }
@@ -231,15 +264,18 @@ fn parse_size_token(tok: &str) -> Result<u64, String> {
         'M' | 'm' => (&t[..t.len() - 1], 1024 * 1024),
         'G' | 'g' => (&t[..t.len() - 1], 1024 * 1024 * 1024),
         c if c.is_ascii_digit() => (t, 1),
-        c => return Err(format!("invalid size suffix {c:?} in {tok:?} (expected B, K, M, G)")),
+        c => {
+            return Err(format!(
+                "invalid size suffix {c:?} in {tok:?} (expected B, K, M, G)"
+            ))
+        }
     };
-    let n: u64 = num
-        .parse()
-        .map_err(|_| format!("invalid size {tok:?}"))?;
+    let n: u64 = num.parse().map_err(|_| format!("invalid size {tok:?}"))?;
     if n == 0 {
         return Err(format!("size {tok:?} must be greater than zero"));
     }
-    n.checked_mul(mult).ok_or_else(|| format!("size {tok:?} overflows"))
+    n.checked_mul(mult)
+        .ok_or_else(|| format!("size {tok:?} overflows"))
 }
 
 fn parse_iterations_arg(arg: Option<&str>) -> Result<Vec<(u64, u32)>, String> {
@@ -257,7 +293,9 @@ fn parse_iterations_arg(arg: Option<&str>) -> Result<Vec<(u64, u32)>, String> {
             .parse()
             .map_err(|_| format!("invalid iteration count in {tok:?}"))?;
         if n == 0 {
-            return Err(format!("iteration count in {tok:?} must be greater than zero"));
+            return Err(format!(
+                "iteration count in {tok:?} must be greater than zero"
+            ));
         }
         out.push((bytes, n));
     }
@@ -330,7 +368,11 @@ fn resolve_device(adb: &str, requested: Option<&str>) -> Result<Device, ErrorInf
 
     let model = capture_device_model(adb, &serial).unwrap_or_else(|| "unknown".into());
     let hub_path = capture_hub_path(&serial);
-    Ok(Device { serial, model, hub_path })
+    Ok(Device {
+        serial,
+        model,
+        hub_path,
+    })
 }
 
 fn capture_adb_version(adb: &str) -> Option<String> {
@@ -397,16 +439,19 @@ fn run_iterations(
     let mut all = Vec::new();
     let tty = std::io::stderr().is_terminal();
 
-    progress_line(tty, &format!(
-        "adb: device serial={} model={} sizes={}",
-        device.serial,
-        device.model,
-        specs
-            .iter()
-            .map(|s| format!("{}B×{}", s.bytes, s.iterations))
-            .collect::<Vec<_>>()
-            .join(",")
-    ));
+    progress_line(
+        tty,
+        &format!(
+            "adb: device serial={} model={} sizes={}",
+            device.serial,
+            device.model,
+            specs
+                .iter()
+                .map(|s| format!("{}B×{}", s.bytes, s.iterations))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    );
 
     // Use a unique workspace under the system temp dir so concurrent
     // invocations don't collide on local paths.
@@ -436,15 +481,23 @@ fn run_iterations(
         for (i, (path, expected_hash)) in local_files.iter().enumerate() {
             progress_inplace(tty, &format!("adb: [{size_label}] push {}/{n}", i + 1));
             let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
+            let transfer_started_at_utc = transfer_timestamp_utc();
             let t0 = Instant::now();
             let status = Command::new(adb)
-                .args(["-s", &device.serial, "push", path.to_str().unwrap(), &remote])
+                .args([
+                    "-s",
+                    &device.serial,
+                    "push",
+                    path.to_str().unwrap(),
+                    &remote,
+                ])
                 .output()
                 .map_err(|e| ErrorInfo {
                     kind: ERR_ADB_COMMAND_FAILED.into(),
                     message: format!("adb push spawn failed: {e}"),
                 })?;
             let elapsed = t0.elapsed();
+            let transfer_finished_at_utc = transfer_timestamp_utc();
             if !status.status.success() {
                 return Err(ErrorInfo {
                     kind: ERR_ADB_COMMAND_FAILED.into(),
@@ -468,6 +521,8 @@ fn run_iterations(
                 hub_path: device.hub_path.clone(),
                 size_bytes: spec.bytes,
                 direction: "push".into(),
+                transfer_started_at_utc: Some(transfer_started_at_utc),
+                transfer_finished_at_utc: Some(transfer_finished_at_utc),
                 bytes_per_sec,
                 elapsed_ms,
                 sha256_ok: sha_ok,
@@ -482,6 +537,7 @@ fn run_iterations(
             progress_inplace(tty, &format!("adb: [{size_label}] pull {}/{n}", i + 1));
             let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
             let local_pulled = work_dir.join(format!("pulled_{}_{i}.bin", spec.bytes));
+            let transfer_started_at_utc = transfer_timestamp_utc();
             let t0 = Instant::now();
             let status = Command::new(adb)
                 .args([
@@ -497,6 +553,7 @@ fn run_iterations(
                     message: format!("adb pull spawn failed: {e}"),
                 })?;
             let elapsed = t0.elapsed();
+            let transfer_finished_at_utc = transfer_timestamp_utc();
             if !status.status.success() {
                 return Err(ErrorInfo {
                     kind: ERR_ADB_COMMAND_FAILED.into(),
@@ -524,6 +581,8 @@ fn run_iterations(
                 hub_path: device.hub_path.clone(),
                 size_bytes: spec.bytes,
                 direction: "pull".into(),
+                transfer_started_at_utc: Some(transfer_started_at_utc),
+                transfer_finished_at_utc: Some(transfer_finished_at_utc),
                 bytes_per_sec,
                 elapsed_ms,
                 sha256_ok: sha_ok,
@@ -543,6 +602,13 @@ fn run_iterations(
     progress_line(tty, "adb: done");
 
     Ok(all)
+}
+
+/// RFC 3339 UTC timestamp with microsecond precision. This is intentionally
+/// finer-grained than the envelope timestamp so separately scheduled workers
+/// can be correlated by transfer overlap.
+fn transfer_timestamp_utc() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)
 }
 
 /// Writes a progress line to stderr. Always emitted, regardless of --json,
@@ -723,7 +789,16 @@ fn emit_failure(
     error: ErrorInfo,
     exit_code: i32,
 ) -> i32 {
-    let out = build_output(Status::Failed, host, cpu, adb_config, adb_env, None, None, Some(error));
+    let out = build_output(
+        Status::Failed,
+        host,
+        cpu,
+        adb_config,
+        adb_env,
+        None,
+        None,
+        Some(error),
+    );
     emit(json, &out, exit_code)
 }
 
@@ -779,8 +854,16 @@ fn print_human(out: &Output) {
         println!("error.message:  {}", err.message);
     }
     if let Some(r) = &out.adb_results {
-        let n_push = r.iterations.iter().filter(|i| i.direction == "push").count();
-        let n_pull = r.iterations.iter().filter(|i| i.direction == "pull").count();
+        let n_push = r
+            .iterations
+            .iter()
+            .filter(|i| i.direction == "push")
+            .count();
+        let n_pull = r
+            .iterations
+            .iter()
+            .filter(|i| i.direction == "pull")
+            .count();
         let bad = r.iterations.iter().filter(|i| !i.sha256_ok).count();
         println!("iterations:     push={n_push} pull={n_pull} sha_failed={bad}");
     }
@@ -866,5 +949,39 @@ mod tests {
         let local_h = sha256_file(&p1).unwrap();
         assert_eq!(local_h, h1);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn transfer_timestamp_is_precise_rfc3339_utc() {
+        let timestamp = transfer_timestamp_utc();
+        assert!(timestamp.ends_with('Z'));
+        assert!(timestamp.contains('.'));
+        let parsed = chrono::DateTime::parse_from_rfc3339(&timestamp).unwrap();
+        assert_eq!(parsed.offset().local_minus_utc(), 0);
+    }
+
+    #[test]
+    fn adb_iteration_serializes_transfer_timestamps() {
+        let iteration = AdbIteration {
+            device_serial: "serial".into(),
+            device_model: "model".into(),
+            hub_path: None,
+            size_bytes: 25,
+            direction: "push".into(),
+            transfer_started_at_utc: Some("2026-07-16T12:00:00.123456Z".into()),
+            transfer_finished_at_utc: Some("2026-07-16T12:00:00.123789Z".into()),
+            bytes_per_sec: 1.0,
+            elapsed_ms: 1.0,
+            sha256_ok: true,
+        };
+        let value = serde_json::to_value(iteration).unwrap();
+        assert_eq!(
+            value["transfer_started_at_utc"],
+            "2026-07-16T12:00:00.123456Z"
+        );
+        assert_eq!(
+            value["transfer_finished_at_utc"],
+            "2026-07-16T12:00:00.123789Z"
+        );
     }
 }
