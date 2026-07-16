@@ -1,6 +1,6 @@
 [package]
 name = "fleetbench"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Cross-platform CPU benchmark collector for performance-testing fleets"
 license = "MPL-2.0"
