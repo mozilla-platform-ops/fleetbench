@@ -193,6 +193,7 @@ size, direction (push/pull), bytes/sec, `elapsed_ms`, `sha256_ok`. These land in
 
 ## References
 
+- [Proposed Android USB/ADB service-level requirements](ANDROID_USB_SLA.md).
 - Beads ticket: `fleetbench-adb-io-bench-gjb` (design decisions, closed
   2026-05-27).
 - [README — ADB I/O benchmark](../README.md#adb-io-benchmark-adb) (usage).

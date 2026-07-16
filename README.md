@@ -125,6 +125,8 @@ today?" style problems across vendors (e.g. bitbar vs LambdaTest).
 
 For the background, design rationale, and the original developer test this
 reproduces, see [`docs/ADB_TESTING.md`](docs/ADB_TESTING.md).
+For proposed device-lab vendor requirements and the acceptance procedure, see
+[`docs/ANDROID_USB_SLA.md`](docs/ANDROID_USB_SLA.md).
 
 ```bash
 fleetbench adb --json                                  # all defaults
