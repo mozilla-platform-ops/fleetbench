@@ -63,14 +63,22 @@ binary (1 MiB = 1,048,576 bytes).
 
 | Operation | Required objective | Purpose |
 |---|---:|---|
-| 25-byte push and pull | p95 <= 50 ms; p99 <= 100 ms | ADB command/setup and arbitration latency |
-| 1 MiB push and pull | p95 <= 100 ms | Small-transfer performance |
-| 10 MiB push and pull | p95 <= 500 ms | Mid-sized asset transfer |
-| 100 MiB push and pull | median throughput >= 25 MiB/s and p95 elapsed <= 4.5 s | Bulk-transfer ceiling |
+| Production latency probe: 25-byte push to `/sdcard/Download` | mean near 375 ms; maximum <= 500 ms | End-to-end latency under production conditions |
+| 100 MiB push and pull to `/data/local/tmp/` | median throughput >= 25 MiB/s and p95 elapsed <= 4.5 s | Bulk-transfer ceiling |
 
-Preferred bulk throughput is **30-40 MiB/s per active device**. Results must not
-contain a recurring multi-hundred-millisecond latency tail for the 25-byte
-operation, even if the mean remains within target.
+For the production latency probe, the distribution should normally remain
+within approximately 25-30% of its mean, with no sample exceeding the 500 ms
+hard limit. At a 375 ms mean, a 30% band is approximately 263-488 ms. The
+concrete mean and maximum requirements take precedence over an informal use of
+the word "variance."
+
+Expected bulk throughput is **25-32 MiB/s per active device**. Higher throughput
+is welcome but is not required.
+
+Fleetbench's 25-byte `/data/local/tmp/` operation and its 1 MiB and 10 MiB
+transfers remain useful diagnostic measurements. They isolate command overhead
+and show how quickly the connection reaches steady state, but they are not
+separate vendor pass/fail thresholds in this SLA.
 
 These objectives describe the end-to-end ADB path, not raw USB signaling speed.
 USB 3.x is welcome but is not required when USB 2.0 High-Speed meets the
@@ -101,11 +109,10 @@ fleetbench adb --serial <usb-serial> --json
 The default workload measures 25-byte, 1 MiB, 10 MiB, and 100 MiB payloads and
 emits raw per-iteration push/pull timings. It uses distinct pre-generated files
 and verifies transfers with SHA-256. The default remote path is
-`/data/local/tmp/`, which avoids `/sdcard` filesystem overhead and gives a clean
-ADB/USB measurement.
+`/data/local/tmp/`, which avoids `/sdcard` filesystem overhead and provides the
+bulk-throughput acceptance measurement plus diagnostic latency data.
 
-Run an additional production-path validation when test jobs stage files through
-shared storage:
+Run the latency acceptance test through the production shared-storage path:
 
 ```bash
 fleetbench adb --serial <usb-serial> \
@@ -142,16 +149,24 @@ The vendor's acceptance report must include:
 ## Rationale and current baseline
 
 Clean, isolated direct-USB measurements at LambdaTest produced approximately
-25-35 MiB/s with about 10 ms of 25-byte push latency, broadly comparable to the
-available BitBar smoke-test result. That BitBar run reached approximately
-32 MiB/s for a 100 MiB transfer, with 25-byte operations below 41 ms. A directly
-attached Pixel validation reached about 34 MiB/s push and 39 MiB/s pull.
+25-35 MiB/s with about 10 ms of diagnostic 25-byte push latency, broadly
+comparable to the available BitBar smoke-test result. That BitBar run reached
+approximately 32 MiB/s for a 100 MiB transfer, with diagnostic 25-byte
+operations below 41 ms. A directly attached Pixel validation reached about
+34 MiB/s push and 39 MiB/s pull.
 
 These measurements establish that both vendors' isolated USB paths could meet
-the proposed numerical objectives. They do **not** establish performance at
-peak multi-device transfer concurrency: the available BitBar artifact used only
-one Fleetbench process on a lightly loaded host, and the LambdaTest comparison
-was also an isolated USB measurement.
+the bulk-throughput objective. They do **not** establish performance at peak
+multi-device transfer concurrency: the available BitBar artifact used only one
+Fleetbench process on a lightly loaded host, and the LambdaTest comparison was
+also an isolated USB measurement.
+
+In the older production-path comparison, BitBar push latency stayed within
+approximately 280-470 ms, consistent with the proposed high-load latency
+objective. LambdaTest results ranged from approximately 280-1,600 ms and would
+not meet it. That historical data did not capture transport identity, so it
+cannot determine whether LambdaTest's long tail came from direct USB, TCP ADB,
+or a mixture of the two paths.
 
 In contrast, measured LambdaTest TCP ADB endpoints ranged from roughly
 150 KiB/s to 1 MiB/s and had much higher, more variable latency.
