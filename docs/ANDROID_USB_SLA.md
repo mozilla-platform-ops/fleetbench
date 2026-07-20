@@ -63,17 +63,57 @@ binary (1 MiB = 1,048,576 bytes).
 
 | Operation | Required objective | Purpose |
 |---|---:|---|
-| Production latency probe: 25-byte push to `/sdcard/Download` | mean near 375 ms; maximum <= 500 ms | End-to-end latency under production conditions |
-| 100 MiB push and pull to `/data/local/tmp/` | median throughput >= 25 MiB/s and p95 elapsed <= 4.5 s | Bulk-transfer ceiling |
+| Production latency probe: 25-byte push to `/sdcard/Download` | mean near 375 ms; p95 <= 500 ms; p99 <= 750 ms; standard deviation approximately <= 125 ms | End-to-end latency under production conditions |
+| 100 MiB push and pull to `/data/local/tmp/` | median throughput >= 20 MiB/s; preferred range 25-32 MiB/s per device; p95 elapsed approximately <= 5.0 s | Bulk-transfer floor and target |
+| Small-transfer probe: 50 KiB push and pull | p95 elapsed <= 1.0 s; preferred p95 <= 500 ms | Detects congestion hidden by bulk averages |
 
-For the production latency probe, the distribution should normally remain
-within approximately 25-30% of its mean, with no sample exceeding the 500 ms
-hard limit. At a 375 ms mean, a 30% band is approximately 263-488 ms. The
-concrete mean and maximum requirements take precedence over an informal use of
-the word "variance."
+### Basis for the formal values
 
-Expected bulk throughput is **25-32 MiB/s per active device**. Higher throughput
-is welcome but is not required.
+The performance team supplied this expectation as the starting point:
+
+> For latency, we should ask for a maximum high-load latency of around ~500 ms
+> with a mean near ~375 ms and no more than ~25-30% variation around the mean.
+> For bandwidth, asking for 25-32 MiB/s seems reasonable. Some outliers for
+> latency/bandwidth would be fine, but overall we need to see a distribution of
+> the latency around a low mean and for there not to be a long tail.
+
+This SLA turns that guidance into statistics that can be reproduced across
+runs. The approximately 125 ms variation corresponds to the requested
+25-30%-of-mean spread (125 ms / 375 ms is approximately 33%); it is represented
+by standard deviation rather than by an informal interval called “variance.”
+
+The p95 and p99 limits are the operational tail requirements. An isolated
+maximum above those limits should be reported and investigated, but a single
+outlier does not by itself characterize the service. A recurring tail or a
+failure of the p95/p99 limits is non-compliant.
+
+### Additional throughput and small-transfer guidance
+
+The follow-up guidance was:
+
+> 20 Mb/s would be fine with me. I’m not sure if MB/s is the right thing to
+> target though. An average of 20 Mb/s can still hide a small 50 KiB transfer
+> taking one second. High-load congestion is the issue, so the acceptance test
+> must measure both sustained throughput and small-transfer latency. The vendor
+> should also confirm whether additional PCIe USB controllers are available to
+> remove shared-controller contention.
+
+This SLA uses **MiB/s** (mebibytes per second) consistently; vendor reports must
+not mix bits and bytes. The formal minimum sustained-throughput floor is a
+per-device median of 20 MiB/s for 100 MiB transfers. The preferred operating
+range remains 25-32 MiB/s. At the 20 MiB/s floor, a 100 MiB transfer completes
+in approximately five seconds, which is why the corresponding p95 elapsed-time
+limit is approximately 5.0 seconds.
+
+Bulk throughput cannot waive small-operation latency. A 50 KiB probe must have
+p95 elapsed time no greater than one second, with 500 ms as the preferred
+target. This probe is evaluated independently for push and pull and under the
+same high-load concurrency as the bulk test. The vendor must document available
+PCIe USB controllers and state whether adding controllers, changing hub
+topology, or reducing devices per controller is required to meet these values.
+
+Expected bulk throughput is **25-32 MiB/s per active device**, with 20 MiB/s as
+the minimum acceptable floor. Higher throughput is welcome but is not required.
 
 Fleetbench's 25-byte `/data/local/tmp/` operation and its 1 MiB and 10 MiB
 transfers remain useful diagnostic measurements. They isolate command overhead
@@ -112,6 +152,10 @@ and verifies transfers with SHA-256. The default remote path is
 `/data/local/tmp/`, which avoids `/sdcard` filesystem overhead and provides the
 bulk-throughput acceptance measurement plus diagnostic latency data.
 
+Add a 50 KiB payload to the acceptance run (or run it as a separate probe) so
+that small-transfer latency is measured directly; the default payload set does
+not substitute for this probe.
+
 Run the latency acceptance test through the production shared-storage path:
 
 ```bash
@@ -119,9 +163,27 @@ fleetbench adb --serial <usb-serial> \
   --remote-path /sdcard/Download --json
 ```
 
-Acceptance is evaluated per device and per direction using the raw distribution,
-including p50, p95, p99, and maximum. A fleet-wide mean must not be used to hide
-slow devices, overloaded hubs, or long-tail outliers.
+Acceptance is evaluated per device and per direction using the raw distribution.
+For latency, report mean, median, standard deviation, coefficient of variation,
+IQR, MAD, p95, p99, and maximum. For bandwidth, report mean, median, p05, p10,
+p25, p75, p95, IQR, and coefficient of variation. Include bootstrap 95%
+confidence intervals for the mean and the key tail statistics. A fleet-wide
+mean must not be used to hide slow devices, overloaded hubs, or long-tail
+outliers.
+
+The latency target is met when the per-device mean is near 375 ms, p95 is at
+most 500 ms, p99 is at most 750 ms, and standard deviation is approximately at
+most 125 ms (coefficient of variation approximately at most 33%). The bandwidth
+target floor is met when the per-device median is at least 20 MiB/s; the
+preferred operating range is 25-32 MiB/s. Report the pooled lower tail (p10)
+separately to expose devices that a median could conceal. The 50 KiB latency
+floor is met when p95 is at most one second. These criteria apply to push and
+pull independently.
+
+The shape of the latency distribution is diagnostic rather than a requirement
+to pass a formal normality test. A skewed or multimodal distribution is
+acceptable only if it still satisfies the quantile and dispersion limits and
+does not show a recurring long tail.
 
 The acceptance report must include a concurrency curve showing per-device and
 aggregate performance with 1, 2, 4, and successively more simultaneous
@@ -143,7 +205,11 @@ The vendor's acceptance report must include:
   load, and the number actively transferring in each test step.
 - Raw per-iteration Fleetbench JSON, including transfer start/end timestamps,
   not only aggregate averages.
-- Per-device and per-direction p50, p95, p99, maximum, and bulk throughput.
+- Per-device and per-direction latency mean, median, standard deviation, CV, IQR,
+  MAD, p95, p99, maximum, and bootstrap 95% confidence intervals.
+- Per-device and per-direction bandwidth mean, median, p05, p10, p25, p75, p95,
+  IQR, CV, and bootstrap 95% confidence intervals.
+- 50 KiB push/pull p95 latency, separately from the bulk-transfer statistics.
 - Per-device and aggregate throughput at each tested concurrency level.
 - All disconnects, retries, checksum failures, and excluded samples.
 
