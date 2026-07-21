@@ -188,6 +188,15 @@ lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh -
 
 ## Recorded results
 
+### 2026-07-20 — one-device artifact smoke
+
+The artifact smoke task on `R5CXC1ARZDN` completed successfully. It verified
+that `lt_run_cmd` downloads the three Fleetbench JSON envelopes, three logs,
+and `manifest.txt` when given the additional artifact path and required-glob
+options. The task used `v0.4.1`, completed all three bulk loops, recorded 2,100
+timestamped transfers, and had no checksum failures. This is an artifact and
+data-quality preflight, not a saturation result.
+
 ### 2026-07-21 — `10.146.2.55` (`test-1`) bulk phase
 
 The eight-device bulk batch labeled `fleetbench-usb-bulk-10.146.2.55`
@@ -211,8 +220,37 @@ completed successfully. The report and downloaded artifacts are at
 | Seven peers (full eight-device overlap) | Pull | 253 | 9.09 MiB/s | 12.87 s |
 
 These results are below the 20 MiB/s throughput floor and above the
-approximately 5 s p95 elapsed-time limit. The production-path latency phase
-for this host remains outstanding.
+approximately 5 s p95 elapsed-time limit.
+
+### 2026-07-21 — `10.146.2.55` (`test-1`) latency phase
+
+The eight-device latency batch labeled `fleetbench-usb-latency-10.146.2.55`
+completed successfully. The report and downloaded artifacts are at
+`~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260721_143927_043369/`.
+All eight jobs completed `[OK]`; all 19,200 transfer records had valid
+timestamps and successful checksums. Transfer windows reached eight simultaneous
+transfers (seven peer devices) at `2026-07-21T21:40:49.228412Z`.
+
+| Size | Samples | Mean | Median | Standard deviation | CV | IQR | MAD | p95 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 25 B | 9,600 | 17.56 ms | 17.06 ms | 10.98 ms | 62.55% | 17.94 ms | 9.07 ms | 32.16 ms | 51.46 ms | 229.71 ms |
+| 50 KiB | 9,600 | 19.98 ms | 18.41 ms | 15.34 ms | 76.81% | 18.32 ms | 8.91 ms | 33.71 ms | 49.80 ms | 461.58 ms |
+
+The 25-byte result passes the 375 ms mean, 500 ms p95, and 750 ms p99
+criteria. The 50 KiB result passes the 1 s p95 floor and the 500 ms preferred
+target.
+
+Full eight-device overlap was necessarily sparse for these short operations:
+only nine 50 KiB transfers overlapped all seven peers (p95 29.70 ms), and no
+25-byte transfer did. The 25-byte transfers reached at most six peers. Treat
+the all-sample latency statistics above as the reliable result; the nine-sample
+full-overlap 50 KiB cohort is not sufficient for a strong tail-latency claim.
+
+| Test | Scope | Result | Caveat |
+|---|---|---|---|
+| Artifact smoke | 1 device, 3 bulk loops | Artifacts, timestamps, and checksums verified | Not a saturation measurement |
+| Bulk | 8 devices, 16,800 transfers | Full eight-device overlap; 100 MiB medians 8.86 MiB/s push and 8.41 MiB/s pull | Throughput is below the 20 MiB/s floor under contention |
+| Latency | 8 devices, 19,200 transfers | 25 B p95 32.16 ms; 50 KiB p95 33.71 ms | Full eight-way overlap has only 9 50 KiB samples and no 25-byte samples |
 
 ## Analysis and acceptance
 
