@@ -19,8 +19,9 @@ phones return to normal Taskcluster scheduling after the jobs end.
   use `--group` or `--all` for this experiment.
 - Target only serials assigned to `a55-perf` in `lambdatest.yml`. Do not borrow
   devices from `p9-perf`, `a55-alpha`, or `stab` to fill a host.
-- Do not target any `test-1` device. The entire host `10.146.2.55` is reserved
-  for unrelated testing and is excluded below.
+- The `test-1` host `10.146.2.55` is eligible for this experiment because its
+  devices are currently idle. It remains a `test-1` host; target only the
+  eight serials listed below and do not use `--group` to select it.
 - Run one host batch at a time. Do not combine serials from different hosts in a
   single launch; that would measure fleet-wide concurrency, not shared-host USB
   contention.
@@ -40,32 +41,40 @@ on 2026-07-16. Each batch has eight phones attached to one Docker host.
 | `10.146.2.54` | `R5CXC1PW94F`, `RZCXC187YCR`, `RZCXC16WHTA`, `RZCXC16W6KT`, `R5CXC1PW7CR`, `R5CXC1HZ4KD`, `R5CXC1ASH4E`, `R5CXC1AHZBW` |
 | `10.146.2.53` | `R5CXC1ASHNJ`, `R5CXC1AHXYD`, `R5CXC1HZ5PZ`, `R5CXC1AHWWZ`, `RZCXC15YZVZ`, `R5CXC1AJ07K`, `RZCXC189JSJ`, `RZCXC19G1CT` |
 | `10.146.2.48` | `R5CY21T22NH`, `RZCX23RT6WR`, `R5CXC1AMNFY`, `RZCX31FDGJE`, `RZCX71ZVF6J`, `R5CX23RTKSK`, `RZCY204AAZD`, `RZCX50TW03H` |
+| `10.146.2.55` (`test-1`) | `R5CXC1HZA6V`, `R5CXC1ARZDN`, `R5CXC1HZ43J`, `R5CXC1HZ85W`, `R5CXC1SXMVR`, `RZCXC19G1DM`, `RZCXC1BK67D`, `RZCY107MCLV` |
 
-Excluded `test-1` host, `10.146.2.55`: `R5CXC1HZA6V`, `R5CXC1ARZDN`,
-`R5CXC1HZ43J`, `R5CXC1HZ85W`, `R5CXC1SXMVR`, `RZCXC19G1DM`,
-`RZCXC1BK67D`, and `RZCY107MCLV`.
-
-The three eligible eight-device `a55-perf` hosts are `10.146.2.54`,
-`10.146.2.53`, and `10.146.2.48`. All other hosts have fewer than eight
-eligible `a55-perf` phones and are omitted; do not combine them to manufacture
-an eight-device batch.
+The four eligible eight-device hosts are `10.146.2.54`, `10.146.2.53`,
+`10.146.2.48`, and `10.146.2.55` (`test-1`). All other hosts have fewer than
+eight eligible phones and are omitted; do not combine them to manufacture an
+eight-device batch.
 
 ## Required runner artifact behavior
 
-`lt_run_cmd --script` currently uploads `output.txt` only. That is insufficient:
-the experiment needs every Fleetbench JSON envelope and log. Before the first
-real batch, make the run-command HyperExecute configuration upload
-`fleetbench-artifacts/**` in addition to `output.txt`, then verify a one-device
-smoke task downloads:
+`lt_run_cmd --script` uploads `output.txt` by default. Every launch must also
+pass `--artifact-path 'fleetbench-artifacts/**'` and require the JSON, log, and
+manifest paths below. This uploads each Fleetbench JSON envelope and log in
+addition to `output.txt` and fails a device if an expected artifact is missing.
+A one-device smoke task on `R5CXC1ARZDN` completed this verification on
+2026-07-20.
 
 ```text
-fleetbench-artifacts/fleetbench-adb-001.json
-fleetbench-artifacts/fleetbench-adb-001.log
+fleetbench-artifacts/fleetbench-adb-bulk-1.json
+fleetbench-artifacts/fleetbench-adb-bulk-1.log
+fleetbench-artifacts/manifest.txt
 ```
 
 The host-side test script must download the `v0.4.1` Linux binary and
 `SHA256SUMS`, verify the binary, use the exported `$DEVICE_SERIAL`, and retain
 each JSON/log pair under `fleetbench-artifacts/`.
+
+Include these options in every `lt_run_cmd` invocation:
+
+```bash
+--artifact-path 'fleetbench-artifacts/**' \
+--require-artifact-glob 'fleetbench-artifacts/**/*.json' \
+--require-artifact-glob 'fleetbench-artifacts/**/*.log' \
+--require-artifact-glob 'fleetbench-artifacts/manifest.txt'
+```
 
 ## Workloads
 
@@ -81,8 +90,8 @@ for run in $(seq -w 1 "$RUNS"); do
     --sizes 25B,1M,10M,100M \
     --iterations 25B=200,1M=100,10M=30,100M=20 \
     --json \
-    > "fleetbench-artifacts/fleetbench-adb-${run}.json" \
-    2> "fleetbench-artifacts/fleetbench-adb-${run}.log"
+    > "fleetbench-artifacts/fleetbench-adb-bulk-${run}.json" \
+    2> "fleetbench-artifacts/fleetbench-adb-bulk-${run}.log"
 done
 ```
 
@@ -127,6 +136,10 @@ source lt_env.sh
 
 lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh \
   --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
+  --artifact-path 'fleetbench-artifacts/**' \
+  --require-artifact-glob 'fleetbench-artifacts/**/*.json' \
+  --require-artifact-glob 'fleetbench-artifacts/**/*.log' \
+  --require-artifact-glob 'fleetbench-artifacts/manifest.txt' \
   --label fleetbench-usb-host-10.146.2.54 \
   --device R5CXC1PW94F --device RZCXC187YCR \
   --device RZCXC16WHTA --device RZCXC16W6KT \
@@ -142,29 +155,34 @@ it explicitly with `--serial`.
 ## Copy/paste HyperExecute commands
 
 Run these from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`.
-The commands use direct serial targeting and intentionally contain no
-`10.146.2.55` / `test-1` device. Run the bulk command for an approved host
-first, download and inspect its artifacts, then run that host's latency command.
+The commands use direct serial targeting. `10.146.2.55` remains labeled
+`test-1`, but is an approved host for this experiment. Run the bulk command for
+an approved host first, download and inspect its artifacts, then run that host's
+latency command.
 
 ### Bulk phase
 
 ```bash
-lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --label fleetbench-usb-bulk-10.146.2.54 --device R5CXC1PW94F --device RZCXC187YCR --device RZCXC16WHTA --device RZCXC16W6KT --device R5CXC1PW7CR --device R5CXC1HZ4KD --device R5CXC1ASH4E --device R5CXC1AHZBW
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-bulk-10.146.2.54 --device R5CXC1PW94F --device RZCXC187YCR --device RZCXC16WHTA --device RZCXC16W6KT --device R5CXC1PW7CR --device R5CXC1HZ4KD --device R5CXC1ASH4E --device R5CXC1AHZBW
 
-lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --label fleetbench-usb-bulk-10.146.2.53 --device R5CXC1ASHNJ --device R5CXC1AHXYD --device R5CXC1HZ5PZ --device R5CXC1AHWWZ --device RZCXC15YZVZ --device R5CXC1AJ07K --device RZCXC189JSJ --device RZCXC19G1CT
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-bulk-10.146.2.53 --device R5CXC1ASHNJ --device R5CXC1AHXYD --device R5CXC1HZ5PZ --device R5CXC1AHWWZ --device RZCXC15YZVZ --device R5CXC1AJ07K --device RZCXC189JSJ --device RZCXC19G1CT
 
-lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --label fleetbench-usb-bulk-10.146.2.48 --device R5CY21T22NH --device RZCX23RT6WR --device R5CXC1AMNFY --device RZCX31FDGJE --device RZCX71ZVF6J --device R5CX23RTKSK --device RZCY204AAZD --device RZCX50TW03H
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-bulk-10.146.2.48 --device R5CY21T22NH --device RZCX23RT6WR --device R5CXC1AMNFY --device RZCX31FDGJE --device RZCX71ZVF6J --device R5CX23RTKSK --device RZCY204AAZD --device RZCX50TW03H
+
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-bulk-10.146.2.55 --device R5CXC1HZA6V --device R5CXC1ARZDN --device R5CXC1HZ43J --device R5CXC1HZ85W --device R5CXC1SXMVR --device RZCXC19G1DM --device RZCXC1BK67D --device RZCY107MCLV
 
 ```
 
 ### Production-path latency phase
 
 ```bash
-lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --label fleetbench-usb-latency-10.146.2.54 --device R5CXC1PW94F --device RZCXC187YCR --device RZCXC16WHTA --device RZCXC16W6KT --device R5CXC1PW7CR --device R5CXC1HZ4KD --device R5CXC1ASH4E --device R5CXC1AHZBW
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-latency-10.146.2.54 --device R5CXC1PW94F --device RZCXC187YCR --device RZCXC16WHTA --device RZCXC16W6KT --device R5CXC1PW7CR --device R5CXC1HZ4KD --device R5CXC1ASH4E --device R5CXC1AHZBW
 
-lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --label fleetbench-usb-latency-10.146.2.53 --device R5CXC1ASHNJ --device R5CXC1AHXYD --device R5CXC1HZ5PZ --device R5CXC1AHWWZ --device RZCXC15YZVZ --device R5CXC1AJ07K --device RZCXC189JSJ --device RZCXC19G1CT
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-latency-10.146.2.53 --device R5CXC1ASHNJ --device R5CXC1AHXYD --device R5CXC1HZ5PZ --device R5CXC1AHWWZ --device RZCXC15YZVZ --device R5CXC1AJ07K --device RZCXC189JSJ --device RZCXC19G1CT
 
-lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --label fleetbench-usb-latency-10.146.2.48 --device R5CY21T22NH --device RZCX23RT6WR --device R5CXC1AMNFY --device RZCX31FDGJE --device RZCX71ZVF6J --device R5CX23RTKSK --device RZCY204AAZD --device RZCX50TW03H
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-latency-10.146.2.48 --device R5CY21T22NH --device RZCX23RT6WR --device R5CXC1AMNFY --device RZCX31FDGJE --device RZCX71ZVF6J --device R5CX23RTKSK --device RZCY204AAZD --device RZCX50TW03H
+
+lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-latency-10.146.2.55 --device R5CXC1HZA6V --device R5CXC1ARZDN --device R5CXC1HZ43J --device R5CXC1HZ85W --device R5CXC1SXMVR --device RZCXC19G1DM --device RZCXC1BK67D --device RZCY107MCLV
 
 ```
 
