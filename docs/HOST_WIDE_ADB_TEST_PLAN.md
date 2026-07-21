@@ -213,6 +213,33 @@ completed successfully. The report and downloaded artifacts are at
 These results are below the 20 MiB/s throughput floor and above the
 approximately 5 s p95 elapsed-time limit.
 
+#### Single-device baseline comparison
+
+The earlier artifact smoke on the same host and device (`R5CXC1ARZDN`) provides
+a useful no-concurrent-job baseline for the 100 MiB workload. It is not a
+controlled before/after experiment: it ran on 2026-07-20, before the
+eight-device batch, and its primary purpose was artifact validation. The raw
+report and artifacts are at
+`~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260720_182130_187691/`.
+
+The smoke completed three bulk loops with 2,100 timestamped transfers, no
+checksum failures, and 60 100 MiB samples in each direction:
+
+| Direction | Single-device samples | Median throughput | p95 elapsed time |
+|---|---:|---:|---:|
+| Push | 60 | 34.23 MiB/s | 2.97 s |
+| Pull | 60 | 31.32 MiB/s | 3.25 s |
+
+Compared with the full eight-device-overlap cohort above, contention reduced
+median push throughput by approximately 74% and pull throughput by
+approximately 71%; p95 elapsed time was approximately 4.0× higher in both
+directions.
+
+| Direction | Single-device median / p95 | Eight-device median / p95 | Contention change |
+|---|---:|---:|---:|
+| Push | 34.23 MiB/s / 2.97 s | 8.86 MiB/s / 11.75 s | 74% lower throughput; 4.0× p95 elapsed |
+| Pull | 31.32 MiB/s / 3.25 s | 9.09 MiB/s / 12.87 s | 71% lower throughput; 4.0× p95 elapsed |
+
 ### 2026-07-21 — `10.146.2.55` (`test-1`) latency phase
 
 The eight-device latency batch labeled `fleetbench-usb-latency-10.146.2.55`
