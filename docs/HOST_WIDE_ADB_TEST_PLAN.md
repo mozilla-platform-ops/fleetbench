@@ -186,6 +186,34 @@ lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh -
 
 ```
 
+## Recorded results
+
+### 2026-07-21 — `10.146.2.55` (`test-1`) bulk phase
+
+The eight-device bulk batch labeled `fleetbench-usb-bulk-10.146.2.55`
+completed successfully. The report and downloaded artifacts are at
+`~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260721_120357_866372/`.
+
+- All eight jobs completed `[OK]`, with three JSON envelopes, three logs, and
+  one manifest per device.
+- All 16,800 transfer records had valid timestamps and successful checksums.
+- Transfer windows reached eight simultaneous transfers (seven peer devices);
+  5,307 records overlapped all seven peers. The first observed eight-way
+  transfer began at `2026-07-21T19:05:04.776837Z`.
+
+100 MiB results show substantial shared-host contention:
+
+| Cohort | Direction | Samples | Median throughput | p95 elapsed time |
+|---|---|---:|---:|---:|
+| All overlap levels | Push | 480 | 8.86 MiB/s | 11.93 s |
+| All overlap levels | Pull | 480 | 8.41 MiB/s | 12.94 s |
+| Seven peers (full eight-device overlap) | Push | 371 | 8.86 MiB/s | 11.75 s |
+| Seven peers (full eight-device overlap) | Pull | 253 | 9.09 MiB/s | 12.87 s |
+
+These results are below the 20 MiB/s throughput floor and above the
+approximately 5 s p95 elapsed-time limit. The production-path latency phase
+for this host remains outstanding.
+
 ## Analysis and acceptance
 
 For each `adb_results.iterations[]` record, use
