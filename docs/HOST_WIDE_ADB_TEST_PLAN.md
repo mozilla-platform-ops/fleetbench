@@ -237,11 +237,11 @@ only nine 50 KiB transfers overlapped all seven peers (p95 29.70 ms), and no
 the all-sample latency statistics above as the reliable result; the nine-sample
 full-overlap 50 KiB cohort is not sufficient for a strong tail-latency claim.
 
-| Workload | Scope | Result | Caveat |
-|---|---|---|---|
-| 100 MiB bulk | 8 devices, full eight-device overlap | Push median 8.86 MiB/s (p95 11.75 s); pull median 9.09 MiB/s (p95 12.87 s) | Below the 20 MiB/s floor and above the approximately 5 s p95 target |
-| 25 B latency | 8 devices, 9,600 samples | Mean 17.56 ms; p95 32.16 ms; p99 51.46 ms | No transfer overlapped all seven peers; maximum observed overlap was six peers |
-| 50 KiB latency | 8 devices, 9,600 samples | Mean 19.98 ms; p95 33.71 ms; p99 49.80 ms | Only 9 transfers overlapped all seven peers, too few for a strong full-contention tail claim |
+| Workload | Desired metric | Result | Status | Caveat |
+|---|---|---|---|---|
+| 100 MiB bulk | Median ≥20 MiB/s; p95 elapsed approximately ≤5 s | Push median 8.86 MiB/s (p95 11.75 s); pull median 9.09 MiB/s (p95 12.87 s) | **Fail** | Full eight-device overlap; below the throughput floor and above the p95 target |
+| 25 B latency | Mean ≤375 ms; p95 ≤500 ms; p99 ≤750 ms | Mean 17.56 ms; p95 32.16 ms; p99 51.46 ms | **Pass** | No transfer overlapped all seven peers; maximum observed overlap was six peers |
+| 50 KiB latency | p95 ≤1 s (≤500 ms preferred) | Mean 19.98 ms; p95 33.71 ms; p99 49.80 ms | **Pass** | Only 9 transfers overlapped all seven peers, too few for a strong full-contention tail claim |
 
 ## Analysis and acceptance
 
