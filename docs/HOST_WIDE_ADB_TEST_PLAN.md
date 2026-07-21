@@ -188,15 +188,6 @@ lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh -
 
 ## Recorded results
 
-### 2026-07-20 — one-device artifact smoke
-
-The artifact smoke task on `R5CXC1ARZDN` completed successfully. It verified
-that `lt_run_cmd` downloads the three Fleetbench JSON envelopes, three logs,
-and `manifest.txt` when given the additional artifact path and required-glob
-options. The task used `v0.4.1`, completed all three bulk loops, recorded 2,100
-timestamped transfers, and had no checksum failures. This is an artifact and
-data-quality preflight, not a saturation result.
-
 ### 2026-07-21 — `10.146.2.55` (`test-1`) bulk phase
 
 The eight-device bulk batch labeled `fleetbench-usb-bulk-10.146.2.55`
@@ -246,11 +237,11 @@ only nine 50 KiB transfers overlapped all seven peers (p95 29.70 ms), and no
 the all-sample latency statistics above as the reliable result; the nine-sample
 full-overlap 50 KiB cohort is not sufficient for a strong tail-latency claim.
 
-| Test | Scope | Result | Caveat |
+| Workload | Scope | Result | Caveat |
 |---|---|---|---|
-| Artifact smoke | 1 device, 3 bulk loops | Artifacts, timestamps, and checksums verified | Not a saturation measurement |
-| Bulk | 8 devices, 16,800 transfers | Full eight-device overlap; 100 MiB medians 8.86 MiB/s push and 8.41 MiB/s pull | Throughput is below the 20 MiB/s floor under contention |
-| Latency | 8 devices, 19,200 transfers | 25 B p95 32.16 ms; 50 KiB p95 33.71 ms | Full eight-way overlap has only 9 50 KiB samples and no 25-byte samples |
+| 100 MiB bulk | 8 devices, full eight-device overlap | Push median 8.86 MiB/s (p95 11.75 s); pull median 9.09 MiB/s (p95 12.87 s) | Below the 20 MiB/s floor and above the approximately 5 s p95 target |
+| 25 B latency | 8 devices, 9,600 samples | Mean 17.56 ms; p95 32.16 ms; p99 51.46 ms | No transfer overlapped all seven peers; maximum observed overlap was six peers |
+| 50 KiB latency | 8 devices, 9,600 samples | Mean 19.98 ms; p95 33.71 ms; p99 49.80 ms | Only 9 transfers overlapped all seven peers, too few for a strong full-contention tail claim |
 
 ## Analysis and acceptance
 
