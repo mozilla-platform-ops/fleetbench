@@ -314,6 +314,32 @@ faster for push and 2.2× faster for pull, with roughly half the p95 elapsed
 time. This is strong evidence that the hub configuration helps, but it is not
 causal proof because the two hosts have different device sets and configurations.
 
+### 2026-07-22 — `10.146.2.47` hub-experiment latency phase
+
+The eight-device mixed-group batch labeled
+`fleetbench-usb-hub-latency-10.146.2.47` completed successfully. The report and
+downloaded artifacts are at
+`~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260722_194725_615609/`.
+All eight jobs completed `[OK]`; all 19,200 transfer records had valid
+timestamps and successful checksums. Transfer windows reached eight simultaneous
+transfers (seven peer devices) at `2026-07-23T02:48:16.709454Z`.
+
+| Size | Samples | Mean | Median | Standard deviation | CV | IQR | MAD | p95 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 25 B | 9,600 | 18.01 ms | 17.33 ms | 10.69 ms | 59.36% | 18.04 ms | 9.03 ms | 32.82 ms | 52.87 ms | 74.16 ms |
+| 50 KiB | 9,600 | 19.36 ms | 16.10 ms | 9.77 ms | 50.45% | 18.25 ms | 7.90 ms | 33.17 ms | 38.70 ms | 76.81 ms |
+
+The 25-byte result passes the 375 ms mean, 500 ms p95, and 750 ms p99
+criteria. The 50 KiB result passes the 1 s p95 floor and the 500 ms preferred
+target. These all-sample figures are effectively the same as the `.55`
+reference; the hub's observed benefit is in the saturated 100 MiB workload,
+not these short transfers.
+
+Full eight-device overlap was sparse: only eight 25-byte transfers overlapped
+all seven peers, and no 50 KiB transfer did. The 50 KiB transfers reached at
+most six peers. This proves eight-way overlap occurred but is insufficient for
+a strong full-contention tail-latency claim.
+
 ### 2026-07-21 — `10.146.2.55` (`test-1`) bulk phase
 
 The eight-device bulk batch labeled `fleetbench-usb-bulk-10.146.2.55`
@@ -394,8 +420,10 @@ full-overlap 50 KiB cohort is not sufficient for a strong tail-latency claim.
 |---|---|---|---|---|
 | 100 MiB bulk (`10.146.2.55`) | Median ≥20 MiB/s; p95 elapsed approximately ≤5 s | Push median 8.86 MiB/s (p95 11.75 s); pull median 9.09 MiB/s (p95 12.87 s) | **Fail** | Full eight-device overlap; below the throughput floor and above the p95 target |
 | 100 MiB bulk (`10.146.2.47` hub) | Median ≥20 MiB/s; p95 elapsed approximately ≤5 s | Push median 21.17 MiB/s (p95 5.68 s); pull median 19.93 MiB/s (p95 5.83 s) | **Mixed** | Mixed `a55-perf`/`stab` host; push passes throughput, while pull narrowly misses and p95 exceeds target |
-| 25 B latency | Mean ≤375 ms; p95 ≤500 ms; p99 ≤750 ms | Mean 17.56 ms; p95 32.16 ms; p99 51.46 ms | **Pass** | No transfer overlapped all seven peers; maximum observed overlap was six peers |
-| 50 KiB latency | p95 ≤1 s (≤500 ms preferred) | Mean 19.98 ms; p95 33.71 ms; p99 49.80 ms | **Pass** | Only 9 transfers overlapped all seven peers, too few for a strong full-contention tail claim |
+| 25 B latency (`10.146.2.55`) | Mean ≤375 ms; p95 ≤500 ms; p99 ≤750 ms | Mean 17.56 ms; p95 32.16 ms; p99 51.46 ms | **Pass** | No transfer overlapped all seven peers; maximum observed overlap was six peers |
+| 50 KiB latency (`10.146.2.55`) | p95 ≤1 s (≤500 ms preferred) | Mean 19.98 ms; p95 33.71 ms; p99 49.80 ms | **Pass** | Only 9 transfers overlapped all seven peers, too few for a strong full-contention tail claim |
+| 25 B latency (`10.146.2.47` hub) | Mean ≤375 ms; p95 ≤500 ms; p99 ≤750 ms | Mean 18.01 ms; p95 32.82 ms; p99 52.87 ms | **Pass** | Only 8 transfers overlapped all seven peers |
+| 50 KiB latency (`10.146.2.47` hub) | p95 ≤1 s (≤500 ms preferred) | Mean 19.36 ms; p95 33.17 ms; p99 38.70 ms | **Pass** | No transfer overlapped all seven peers; maximum observed overlap was six peers |
 
 ## Analysis and acceptance
 
