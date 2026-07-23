@@ -19,6 +19,9 @@ phones return to normal Taskcluster scheduling after the jobs end.
   use `--group` or `--all` for this experiment.
 - Target only serials assigned to `a55-perf` in `lambdatest.yml`. Do not borrow
   devices from `p9-perf`, `a55-alpha`, or `stab` to fill a host.
+- Exception: the explicitly labeled `10.146.2.47` hub experiment includes
+  `RZCY10Y548K` from `stab` with seven `a55-perf` devices on the same host.
+  Keep its results separate from the standard `a55-perf` batches.
 - The `test-1` host `10.146.2.55` is eligible for this experiment because its
   devices are currently idle. It remains a `test-1` host; target only the
   eight serials listed below and do not use `--group` to select it.
@@ -42,11 +45,18 @@ on 2026-07-16. Each batch has eight phones attached to one Docker host.
 | `10.146.2.53` | `R5CXC1ASHNJ`, `R5CXC1AHXYD`, `R5CXC1HZ5PZ`, `R5CXC1AHWWZ`, `RZCXC15YZVZ`, `R5CXC1AJ07K`, `RZCXC189JSJ`, `RZCXC19G1CT` |
 | `10.146.2.48` | `R5CY21T22NH`, `RZCX23RT6WR`, `R5CXC1AMNFY`, `RZCX31FDGJE`, `RZCX71ZVF6J`, `R5CX23RTKSK`, `RZCY204AAZD`, `RZCX50TW03H` |
 | `10.146.2.55` (`test-1`) | `R5CXC1HZA6V`, `R5CXC1ARZDN`, `R5CXC1HZ43J`, `R5CXC1HZ85W`, `R5CXC1SXMVR`, `RZCXC19G1DM`, `RZCXC1BK67D`, `RZCY107MCLV` |
+| `10.146.2.47` (hub experiment) | `RZCY10Y4TJX`, `RZCY10Y4TBY`, `RZCY10Y4TAV`, `RZCY10Y4QVX`, `RZCY10Y4HWD`, `RZCY10LGB6W`, `RZCX821GXDJ` (`a55-perf`); `RZCY10Y548K` (`stab`) |
 
 The four eligible eight-device hosts are `10.146.2.54`, `10.146.2.53`,
 `10.146.2.48`, and `10.146.2.55` (`test-1`). All other hosts have fewer than
 eight eligible phones and are omitted; do not combine them to manufacture an
 eight-device batch.
+
+`10.146.2.47` is a separate eight-device mixed-group experiment. The vendor
+added a USB hub to this Docker host on 2026-07-22. Its results may be compared
+with the `10.146.2.55` saturation result as an external reference, but not as
+a controlled before/after measurement because there is no pre-change
+`10.146.2.47` baseline.
 
 ## Required runner artifact behavior
 
@@ -184,6 +194,71 @@ lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh -
 
 lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-latency-10.146.2.55 --device R5CXC1HZA6V --device R5CXC1ARZDN --device R5CXC1HZ43J --device R5CXC1HZ85W --device R5CXC1SXMVR --device RZCXC19G1DM --device RZCXC1BK67D --device RZCY107MCLV
 
+```
+
+## `10.146.2.47` USB-hub experiment
+
+Run this test from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`.
+It deliberately includes the `stab` device `RZCY10Y548K`; the labels make that
+exception and the hub intervention explicit. Use the direct JSON/log globs
+shown below: `lt_run_cmd` searches recursively below each device's downloaded
+artifact directory, while the scripts write these files directly under
+`fleetbench-artifacts/`.
+
+First run the `stab` device alone. This verifies that it is usable after the
+hub change and records a standalone baseline; it is not a saturation result.
+
+```bash
+lt_run_cmd \
+  --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh \
+  --parallel 1 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
+  --artifact-path 'fleetbench-artifacts/**' \
+  --require-artifact-glob 'fleetbench-artifacts/*.json' \
+  --require-artifact-glob 'fleetbench-artifacts/*.log' \
+  --require-artifact-glob 'fleetbench-artifacts/manifest.txt' \
+  --label fleetbench-usb-hub-smoke-10.146.2.47 \
+  --device RZCY10Y548K
+```
+
+If the smoke completes with all artifacts, run the complete host bulk batch;
+download and inspect its artifacts before beginning the latency batch.
+
+```bash
+lt_run_cmd \
+  --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh \
+  --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
+  --artifact-path 'fleetbench-artifacts/**' \
+  --require-artifact-glob 'fleetbench-artifacts/*.json' \
+  --require-artifact-glob 'fleetbench-artifacts/*.log' \
+  --require-artifact-glob 'fleetbench-artifacts/manifest.txt' \
+  --label fleetbench-usb-hub-bulk-10.146.2.47 \
+  --device RZCY10Y548K \
+  --device RZCY10Y4TJX \
+  --device RZCY10Y4TBY \
+  --device RZCY10Y4TAV \
+  --device RZCY10Y4QVX \
+  --device RZCY10Y4HWD \
+  --device RZCY10LGB6W \
+  --device RZCX821GXDJ
+```
+
+```bash
+lt_run_cmd \
+  --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh \
+  --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
+  --artifact-path 'fleetbench-artifacts/**' \
+  --require-artifact-glob 'fleetbench-artifacts/*.json' \
+  --require-artifact-glob 'fleetbench-artifacts/*.log' \
+  --require-artifact-glob 'fleetbench-artifacts/manifest.txt' \
+  --label fleetbench-usb-hub-latency-10.146.2.47 \
+  --device RZCY10Y548K \
+  --device RZCY10Y4TJX \
+  --device RZCY10Y4TBY \
+  --device RZCY10Y4TAV \
+  --device RZCY10Y4QVX \
+  --device RZCY10Y4HWD \
+  --device RZCY10LGB6W \
+  --device RZCX821GXDJ
 ```
 
 ## Recorded results
