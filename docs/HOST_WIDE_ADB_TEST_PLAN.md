@@ -263,6 +263,25 @@ lt_run_cmd \
 
 ## Recorded results
 
+### 2026-07-22 — `10.146.2.47` hub-experiment smoke
+
+The standalone `stab` device `RZCY10Y548K` completed the required three-loop
+bulk smoke with status `[OK]`. The report and downloaded artifacts are at
+`~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260722_175316_311282/`.
+All required JSON, log, and manifest artifacts were present; all 2,100 transfer
+records had valid timestamps and successful checksums.
+
+This is the post-hub standalone baseline for the mixed-group host, not a
+saturation result. Its 100 MiB metrics are healthy:
+
+| Direction | Samples | Median throughput | p95 elapsed time |
+|---|---:|---:|---:|
+| Push | 60 | 33.68 MiB/s | 3.08 s |
+| Pull | 60 | 35.44 MiB/s | 2.89 s |
+
+The next step is the full eight-device bulk batch; only its recorded transfer
+overlap can assess the shared-host behavior after the hub change.
+
 ### 2026-07-21 — `10.146.2.55` (`test-1`) bulk phase
 
 The eight-device bulk batch labeled `fleetbench-usb-bulk-10.146.2.55`
