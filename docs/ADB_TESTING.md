@@ -94,9 +94,11 @@ and are the load-bearing parts of the methodology:
 - **Round-trip verification on separate paths.** Push → `device:/data/local/tmp/X`,
   pull → `orig.pulled`, SHA256 compare; never overwrite the source. Push is
   verified with `adb shell sha256sum` **after its complete timed push loop**,
-  and pull by hashing locally. Deferring push verification preserves
-  back-to-back timing compatibility with Sparky's 25-byte probe. A failed hash
-  sets `sha256_ok = false` and exits non-zero (`exit 2`, correctness failure).
+  and pull by hashing locally **after its complete timed pull loop**.
+  Deferring verification preserves back-to-back timing compatibility with
+  Sparky's 25-byte probe and removes local per-sample pacing from pull
+  measurements. A failed hash sets `sha256_ok = false` and exits non-zero
+  (`exit 2`, correctness failure).
 - **External dep capture.** `adb --version` is recorded in `adb_env`; accept
   `--adb-path` rather than assuming `PATH`.
 - **USB topology.** On Linux, `lsusb -t` is captured per run for hub-path

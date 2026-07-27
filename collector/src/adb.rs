@@ -545,8 +545,11 @@ fn run_iterations(
         }
 
         // PULL timed loop — pulls each previously-pushed remote file to a
-        // distinct local path, verifies via local sha256.
+        // distinct local path. As with pushes, defer local hashing and file
+        // removal until after the full timed loop so that no local filesystem
+        // work paces the next pull sample.
         progress_line(tty, &format!("adb: [{size_label}] pulling"));
+        let mut pulled_for_verification = Vec::with_capacity(n);
         for (i, (_path, expected_hash)) in local_files.iter().enumerate() {
             progress_inplace(tty, &format!("adb: [{size_label}] pull {}/{n}", i + 1));
             let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
@@ -578,17 +581,13 @@ fn run_iterations(
                     ),
                 });
             }
-            let sha_ok = match sha256_file(&local_pulled) {
-                Ok(h) => h == *expected_hash,
-                Err(_) => false,
-            };
-            let _ = fs::remove_file(&local_pulled);
             let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
             let bytes_per_sec = if elapsed.as_secs_f64() > 0.0 {
                 spec.bytes as f64 / elapsed.as_secs_f64()
             } else {
                 0.0
             };
+            let result_index = all.len();
             all.push(AdbIteration {
                 device_serial: device.serial.clone(),
                 device_model: device.model.clone(),
@@ -599,11 +598,22 @@ fn run_iterations(
                 transfer_finished_at_utc: Some(transfer_finished_at_utc),
                 bytes_per_sec,
                 elapsed_ms,
-                sha256_ok: sha_ok,
+                // Updated after the contiguous pull loop completes.
+                sha256_ok: true,
             });
+            pulled_for_verification.push((result_index, local_pulled, *expected_hash));
         }
 
         progress_inplace_done(tty);
+        progress_line(tty, &format!("adb: [{size_label}] verifying pulls"));
+        for (result_index, local_pulled, expected_hash) in pulled_for_verification {
+            all[result_index].sha256_ok = match sha256_file(&local_pulled) {
+                Ok(hash) => hash == expected_hash,
+                Err(_) => false,
+            };
+            let _ = fs::remove_file(local_pulled);
+        }
+
         // Cleanup remote files for this size.
         progress_line(tty, &format!("adb: [{size_label}] cleanup"));
         for i in 0..n {
