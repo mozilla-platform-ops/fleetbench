@@ -476,8 +476,14 @@ fn run_iterations(
             local_files.push((path, hash));
         }
 
-        // PUSH timed loop.
+        // PUSH timed loop. Keep timed pushes back-to-back: performing the
+        // remote SHA256 check after every push inserts an extra adb shell
+        // round-trip between samples and changes the contention pattern. In
+        // particular, Raptor's original 25-byte adb-latency probe ran its 200
+        // pushes consecutively and deferred all cleanup. Verification remains
+        // mandatory, but runs after the complete push loop.
         progress_line(tty, &format!("adb: [{size_label}] pushing"));
+        let mut pushed_for_verification = Vec::with_capacity(n);
         for (i, (path, expected_hash)) in local_files.iter().enumerate() {
             progress_inplace(tty, &format!("adb: [{size_label}] push {}/{n}", i + 1));
             let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
@@ -508,13 +514,13 @@ fn run_iterations(
                     ),
                 });
             }
-            let sha_ok = verify_remote_sha256(adb, &device.serial, &remote, expected_hash);
             let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
             let bytes_per_sec = if elapsed.as_secs_f64() > 0.0 {
                 spec.bytes as f64 / elapsed.as_secs_f64()
             } else {
                 0.0
             };
+            let result_index = all.len();
             all.push(AdbIteration {
                 device_serial: device.serial.clone(),
                 device_model: device.model.clone(),
@@ -525,11 +531,19 @@ fn run_iterations(
                 transfer_finished_at_utc: Some(transfer_finished_at_utc),
                 bytes_per_sec,
                 elapsed_ms,
-                sha256_ok: sha_ok,
+                // Updated after the contiguous push loop completes.
+                sha256_ok: true,
             });
+            pushed_for_verification.push((result_index, remote, *expected_hash));
         }
 
         progress_inplace_done(tty);
+        progress_line(tty, &format!("adb: [{size_label}] verifying pushes"));
+        for (result_index, remote, expected_hash) in pushed_for_verification {
+            all[result_index].sha256_ok =
+                verify_remote_sha256(adb, &device.serial, &remote, &expected_hash);
+        }
+
         // PULL timed loop — pulls each previously-pushed remote file to a
         // distinct local path, verifies via local sha256.
         progress_line(tty, &format!("adb: [{size_label}] pulling"));
