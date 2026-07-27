@@ -28,8 +28,9 @@ phones return to normal Taskcluster scheduling after the jobs end.
 - Run one host batch at a time. Do not combine serials from different hosts in a
   single launch; that would measure fleet-wide concurrency, not shared-host USB
   contention.
-- Use `FLEETBENCH_VERSION=v0.4.1` or later. This is the first release with
-  per-transfer timestamps needed to prove overlap.
+- Use `FLEETBENCH_VERSION=v0.4.2` or later. This is the first release with
+  contiguous timed ADB push/pull loops and per-transfer timestamps needed to
+  prove overlap.
 - Use `--retries 0`. A retried job changes the concurrency pattern and must be
   treated as a separate, failed attempt rather than silently folded into a run.
 
@@ -73,7 +74,7 @@ fleetbench-artifacts/fleetbench-adb-bulk-1.log
 fleetbench-artifacts/manifest.txt
 ```
 
-The host-side test script must download the `v0.4.1` Linux binary and
+The host-side test script must download the `v0.4.2` Linux binary and
 `SHA256SUMS`, verify the binary, use the exported `$DEVICE_SERIAL`, and retain
 each JSON/log pair under `fleetbench-artifacts/`.
 
@@ -94,7 +95,7 @@ collector invocations per device:
 ```bash
 RUNS=3
 for run in $(seq -w 1 "$RUNS"); do
-  ./fleetbench-v0.4.1-linux-x86_64 adb \
+  ./fleetbench-v0.4.2-linux-x86_64 adb \
     --serial "$DEVICE_SERIAL" \
     --remote-path /data/local/tmp/ \
     --sizes 25B,1M,10M,100M \
@@ -115,7 +116,7 @@ Run the production-path latency probe as a separate batch after the bulk run:
 ```bash
 RUNS=3
 for run in $(seq -w 1 "$RUNS"); do
-  ./fleetbench-v0.4.1-linux-x86_64 adb \
+  ./fleetbench-v0.4.2-linux-x86_64 adb \
     --serial "$DEVICE_SERIAL" \
     --remote-path /sdcard/Download \
     --sizes 25B,50K \
