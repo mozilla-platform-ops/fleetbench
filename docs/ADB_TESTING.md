@@ -19,16 +19,33 @@ standalone, controlled reproduction you can run ad hoc on a host.
 
 ## The reference test (origin)
 
-The design reference was an experiment run by a developer ("Sparky"). It was
-**not** a standalone benchmark script — it was a **100-retrigger comparison of
-identical Speedometer 3 jobs across vendors** (a55 hardware, Chrome-m,
-no-fission). Raptor `adb push`es the Speedometer 3 test assets to the device
-during setup, so each retrigger was effectively a timed `adb push` under
-production conditions.
+The design reference was an experiment run by Gregory Mierzwinski ("Sparky")
+on **2026-05-22**: [Try revision
+`7757fbcccc8eb83105af2b9518517f47dcca9eff](https://hg-edge.mozilla.org/try/rev/7757fbcccc8eb83105af2b9518517f47dcca9eff#l1.53).
+It was retriggered 100 times for an identical Android Browsertime/Speedometer 3
+configuration across vendors (a55 hardware, Chrome-m, no-fission), but the
+patched job did **not** run Speedometer itself.
 
-`fleetbench adb` is the controlled, standalone form of that experiment: same
-operation (`adb push`/`pull`), same payload path option, but with explicit
-sizes, iteration counts, payload control, and raw per-iteration output.
+Instead, after normal Android ADB setup, the patch ran an ad-hoc latency probe
+and returned success before the test workload. Each job:
+
+- creates one temporary text file containing `"adb-latency test payload\n"`
+  (**25 bytes**);
+- pushes that same file **200 times** with `self.device.push()` to a distinct
+  filename under `/sdcard/Download`;
+- brackets only each `push()` call with Python `time.perf_counter()`;
+- emits the 200 raw timings as Perfherder `adb-push-latency` replicates; and
+- removes the pushed files only after the timed loop.
+
+Therefore the historical comparison was a **25-byte ADB push loop**, not timing
+Speedometer asset staging or an ordinary end-to-end Speedometer job. The
+headline result was LambdaTest push latency spanning **280 → 1600 ms**, while
+BitBar stayed within **280 → 470 ms**.
+
+`fleetbench adb --sizes 25B --remote-path /sdcard/Download` is the controlled
+standalone analogue of that probe. It deliberately adds optional payload sizes,
+pull measurements, checksum verification, and raw per-iteration output; those
+are extensions, not properties of Sparky's original push-only test.
 
 ## The signal: distribution, not mean
 
