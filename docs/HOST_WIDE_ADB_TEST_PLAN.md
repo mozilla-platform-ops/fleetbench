@@ -264,6 +264,68 @@ lt_run_cmd \
 
 ## Recorded results
 
+### 2026-07-27 — corrected-timing rerun rounds (`v0.4.2`)
+
+The original `.55` and `.47` saturation batches used `v0.4.1`. They remain
+useful historical measurements, but must not be pooled with the reruns below:
+that release performed checksum verification between timed ADB transfers.
+`v0.4.2` defers remote push verification and local pull verification until the
+end of each complete timed loop, preserving checksum validation while keeping
+the timed samples contiguous. The fix removes host-side/device-side verification
+work that could otherwise pace the next transfer and change the observed USB
+contention pattern.
+
+Run the corrected rounds independently, beginning with the standard eight-device
+`.55` (`test-1`) batch. Use `FLEETBENCH_VERSION=v0.4.2` and distinct labels so
+the artifacts and analysis cannot be mistaken for the 2026-07-21/22 `v0.4.1`
+rounds:
+
+| Host and phase | Corrected-timing label |
+|---|---|
+| `.55` bulk | `fleetbench-usb-bulk-v0.4.2-rerun-10.146.2.55` |
+| `.55` latency | `fleetbench-usb-latency-v0.4.2-rerun-10.146.2.55` |
+| `.47` hub smoke | `fleetbench-usb-hub-smoke-v0.4.2-rerun-10.146.2.47` |
+| `.47` hub bulk | `fleetbench-usb-hub-bulk-v0.4.2-rerun-10.146.2.47` |
+| `.47` hub latency | `fleetbench-usb-hub-latency-v0.4.2-rerun-10.146.2.47` |
+
+For each host, complete and inspect the bulk artifacts before launching its
+latency phase. Keep `.47` as the mixed-group hub experiment, including its
+`stab` device, and compare it only as an external reference to `.55`; the
+timing correction does not make those hosts a controlled before/after pair.
+
+Run these from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`.
+The scripts default to `v0.4.2`; `FLEETBENCH_VERSION=v0.4.2` is explicit here
+to make the rerun provenance unambiguous.
+
+#### `.55` (`test-1`) corrected-timing rerun
+
+Run bulk first, inspect its report and artifacts, then run latency.
+
+```bash
+FLEETBENCH_VERSION=v0.4.2 lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-bulk-v0.4.2-rerun-10.146.2.55 --device R5CXC1HZA6V --device R5CXC1ARZDN --device R5CXC1HZ43J --device R5CXC1HZ85W --device R5CXC1SXMVR --device RZCXC19G1DM --device RZCXC1BK67D --device RZCY107MCLV
+```
+
+```bash
+FLEETBENCH_VERSION=v0.4.2 lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/**/*.json' --require-artifact-glob 'fleetbench-artifacts/**/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-latency-v0.4.2-rerun-10.146.2.55 --device R5CXC1HZA6V --device R5CXC1ARZDN --device R5CXC1HZ43J --device R5CXC1HZ85W --device R5CXC1SXMVR --device RZCXC19G1DM --device RZCXC1BK67D --device RZCY107MCLV
+```
+
+#### `.47` hub corrected-timing rerun
+
+Run the `stab` smoke first. Only if it finishes with all required artifacts,
+run bulk, inspect its report and artifacts, and then run latency.
+
+```bash
+FLEETBENCH_VERSION=v0.4.2 lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 1 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/*.json' --require-artifact-glob 'fleetbench-artifacts/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-hub-smoke-v0.4.2-rerun-10.146.2.47 --device RZCY10Y548K
+```
+
+```bash
+FLEETBENCH_VERSION=v0.4.2 lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_bulk.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/*.json' --require-artifact-glob 'fleetbench-artifacts/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-hub-bulk-v0.4.2-rerun-10.146.2.47 --device RZCY10Y548K --device RZCY10Y4TJX --device RZCY10Y4TBY --device RZCY10Y4TAV --device RZCY10Y4QVX --device RZCY10Y4HWD --device RZCY10LGB6W --device RZCX821GXDJ
+```
+
+```bash
+FLEETBENCH_VERSION=v0.4.2 lt_run_cmd --script ~/git/fleetbench/scripts/host_wide_adb_test/run_latency.sh --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 --artifact-path 'fleetbench-artifacts/**' --require-artifact-glob 'fleetbench-artifacts/*.json' --require-artifact-glob 'fleetbench-artifacts/*.log' --require-artifact-glob 'fleetbench-artifacts/manifest.txt' --label fleetbench-usb-hub-latency-v0.4.2-rerun-10.146.2.47 --device RZCY10Y548K --device RZCY10Y4TJX --device RZCY10Y4TBY --device RZCY10Y4TAV --device RZCY10Y4QVX --device RZCY10Y4HWD --device RZCY10LGB6W --device RZCX821GXDJ
+```
+
 ### 2026-07-22 — `10.146.2.47` hub-experiment smoke
 
 The standalone `stab` device `RZCY10Y548K` completed the required three-loop
