@@ -54,7 +54,7 @@ before launching the next one.
 | Phase | Launcher | Purpose |
 |---|---|---|
 | bulk | `run_bulk.sh` | Mixed push/pull baseline over 25 B, 1 MiB, 10 MiB, and 100 MiB. |
-| latency push, 25 B | `run_push_only.sh` | Sustained direct-push contention. Use `mozdevice` mode for the Sparky comparison. |
+| latency push, 25 B | `run_push_only.sh` | Sustained direct-push contention. |
 | latency pull, 25 B | `run_pull_only.sh` | Sustained 25-byte pull contention. |
 | latency push, 50 KiB | `run_push_only.sh` | Sustained 50 KiB push contention. |
 | latency pull, 50 KiB | `run_pull_only.sh` | Sustained 50 KiB pull contention. |
@@ -94,13 +94,21 @@ pull, use `--env FLEETBENCH_PULL_ITERATIONS=5000`. Substitute exactly one
 approved eight-device set and use a label that names its host, direction, and
 size. Never launch commands for the two hosts concurrently.
 
-### Sparky-compatible 25 B push phase
+### Exact Sparky 25 B mozdevice check
 
-For the historical `mozdevice.ADBDevice.push()` comparison, run the push-only
-launcher with `--env FLEETBENCH_PUSH_MODE=mozdevice` and `25B`. This mode times
-mozdevice's pre/post device syncs and its `wait-for-device push` path, rather
-than Fleetbench's default direct `adb push`. Use a release that contains
-`--push-mode`; use `v0.4.4` or later.
+Use `run_sparky_mozdevice_exact.sh` for the literal historical Python probe.
+It fetches the `mozdevice` source from Sparky's Try revision, creates the same
+25-byte temporary file, calls `ADBDeviceFactory(verbose=True)`, then times 200
+calls to `device.push()` with deferred cleanup. It produces the same
+Perfherder-shaped raw replicate array as the original patch. It requires
+network access to hg-edge and PyPI inside the remote job, but does not require a
+Fleetbench release.
+
+Run it with `--env FLEETBENCH_ADB_LATENCY_ITERATIONS=200` (the historical
+default) and label it as an exact mozdevice check. Do not combine its raw
+replicates with Fleetbench transfer-window analysis: this script intentionally
+preserves the original Perfherder output rather than extending it with
+Fleetbench timestamps.
 
 ## Validate and analyze
 
