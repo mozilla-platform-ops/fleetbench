@@ -470,6 +470,14 @@ FLEETBENCH_VERSION=vX.Y.Z FLEETBENCH_PUSH_ITERATIONS=5000 lt_run_cmd \
   --device <serial-1> --device <serial-2> --device <serial-3>
 ```
 
+For independent pull-path stress, use
+`scripts/host_wide_adb_test/run_pull_only.sh` with the same HyperExecute
+arguments. It stages the unique remote source files before the timed section,
+then records only pull windows. Set `FLEETBENCH_PULL_ITERATIONS` (default
+`5000`) to control the length; it also requires an explicit release containing
+`--direction pull`. As with the push-only runner, do not use
+`FLEETBENCH_RUNS`; analyze overlap from the transfer timestamps in the artifacts.
+
 Run these from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`.
 The scripts default to `v0.4.2`; `FLEETBENCH_VERSION=v0.4.2` is explicit here
 to make the rerun provenance unambiguous.

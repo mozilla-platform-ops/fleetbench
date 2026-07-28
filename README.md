@@ -132,7 +132,8 @@ For proposed device-lab vendor requirements and the acceptance procedure, see
 fleetbench adb --json                                  # all defaults
 fleetbench adb --serial <id> --json                    # multi-device host
 fleetbench adb --sizes 25B,1M --iterations 25B=50,1M=20 --json
-fleetbench adb --direction push --sizes 25B --iterations 25B=200 --json # Sparky-style probe
+fleetbench adb --direction push --sizes 25B --iterations 25B=200 --json # push-only probe
+fleetbench adb --direction pull --sizes 25B --iterations 25B=200 --json # pull-only probe
 fleetbench adb --remote-path /sdcard/Download --json   # reproduce raptor's path
 ```
 
@@ -155,6 +156,8 @@ Operational model:
 - **Direction.** `--direction both` is the default. `--direction push` emits
   only push samples: all timed pushes remain contiguous, remote SHA-256 checks
   run after the full push loop, and no pull measurements are taken.
+  `--direction pull` stages unique remote source files before timing, then emits
+  only contiguous pull samples and verifies them locally after the pull loop.
 - **Sizes & iterations.** Defaults emphasize the 25-byte point (where vendor
   variance shows up — that workload is dominated by command/setup overhead,
   not bytes on the wire), then progressively larger transfers:

@@ -94,7 +94,7 @@ enum Command {
     /// concurrently at the orchestrator layer to observe USB contention.
     Adb {
         /// Transfer directions to time. `both` (the default) records push
-        /// then pull samples; `push` records only a contiguous push window.
+        /// then pull samples; `push` and `pull` record one contiguous window.
         #[arg(long, value_enum, default_value_t = AdbDirection::Both)]
         direction: AdbDirection,
         /// Device serial to target. Required if more than one device is
@@ -157,6 +157,7 @@ enum Mode {
 enum AdbDirection {
     Both,
     Push,
+    Pull,
 }
 
 impl AdbDirection {
@@ -164,6 +165,7 @@ impl AdbDirection {
         match self {
             Self::Both => "both",
             Self::Push => "push",
+            Self::Pull => "pull",
         }
     }
 }
@@ -195,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn adb_direction_defaults_to_both_and_accepts_push() {
+    fn adb_direction_defaults_to_both_and_accepts_single_directions() {
         let default = Cli::try_parse_from(["fleetbench", "adb"]).unwrap();
         assert!(matches!(
             default.command,
@@ -210,6 +212,15 @@ mod tests {
             push.command,
             Command::Adb {
                 direction: AdbDirection::Push,
+                ..
+            }
+        ));
+
+        let pull = Cli::try_parse_from(["fleetbench", "adb", "--direction", "pull"]).unwrap();
+        assert!(matches!(
+            pull.command,
+            Command::Adb {
+                direction: AdbDirection::Pull,
                 ..
             }
         ));
