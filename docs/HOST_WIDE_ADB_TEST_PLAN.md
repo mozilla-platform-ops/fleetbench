@@ -478,9 +478,60 @@ then records only pull windows. Set `FLEETBENCH_PULL_ITERATIONS` (default
 `--direction pull`. As with the push-only runner, do not use
 `FLEETBENCH_RUNS`; analyze overlap from the transfer timestamps in the artifacts.
 
-Run these from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`.
-The scripts default to `v0.4.2`; `FLEETBENCH_VERSION=v0.4.2` is explicit here
-to make the rerun provenance unambiguous.
+## Next test phase: `.55`, then `.47`
+
+Run the next saturation phase on one host at a time, in this order:
+
+1. `10.146.2.55` (`test-1`)
+2. `10.146.2.47` (hub group)
+
+For each host, run these three independent eight-device batches in order:
+
+| phase | launcher | purpose |
+|---|---|---|
+| bulk | `run_bulk.sh` | Existing mixed push/pull baseline across all sizes. |
+| latency push | `run_sparky_push_only.sh` | Long, contiguous 25-byte push contention window. |
+| latency pull | `run_pull_only.sh` | Long, contiguous 25-byte pull contention window. |
+
+Use a released version that contains both `--direction push` and `--direction
+pull`; set it explicitly for every command. Do not run phases from different
+hosts concurrently. After each batch, download and validate the JSON, log, and
+manifest artifacts before launching the next batch; use each result's transfer
+timestamps, rather than submission time, to determine actual overlap.
+
+The `.55` device set is:
+
+```text
+R5CXC1HZA6V R5CXC1ARZDN R5CXC1HZ43J R5CXC1HZ85W
+R5CXC1SXMVR RZCXC19G1DM RZCXC1BK67D RZCY107MCLV
+```
+
+The `.47` device set is:
+
+```text
+RZCY10Y548K RZCY10Y4TJX RZCY10Y4TBY RZCY10Y4TAV
+RZCY10Y4QVX RZCY10Y4HWD RZCY10LGB6W RZCX821GXDJ
+```
+
+For either device set, substitute the appropriate label and launcher in this
+command. Run it once for `run_bulk.sh`, once for `run_sparky_push_only.sh`, and
+once for `run_pull_only.sh`; do not set `FLEETBENCH_RUNS`.
+
+```bash
+FLEETBENCH_VERSION=vX.Y.Z lt_run_cmd \
+  --script ~/git/fleetbench/scripts/host_wide_adb_test/<launcher> \
+  --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
+  --artifact-path 'fleetbench-artifacts/**' \
+  --require-artifact-glob 'fleetbench-artifacts/*.json' \
+  --require-artifact-glob 'fleetbench-artifacts/*.log' \
+  --require-artifact-glob 'fleetbench-artifacts/manifest.txt' \
+  --label fleetbench-<host>-<phase> \
+  --device <the-eight-serials-for-this-host>
+```
+
+The commands below are the historical corrected-timing rerun record. Run them
+from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`; they retain
+their explicit `v0.4.2` provenance and do not include the new pull-only phase.
 
 #### `.55` (`test-1`) corrected-timing rerun
 
