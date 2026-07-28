@@ -381,6 +381,63 @@ latency phase. Keep `.47` as the mixed-group hub experiment, including its
 `stab` device, and compare it only as an external reference to `.55`; the
 timing correction does not make those hosts a controlled before/after pair.
 
+#### Work log
+
+| Date | Host | Phase | Version | Label | Status | Notes |
+|---|---|---|---|---|---|---|
+| 2026-07-27 | `.55` (`test-1`) | Bulk | `v0.4.2` | `fleetbench-usb-bulk-v0.4.2-rerun-10.146.2.55` | **Invalid — stop condition** | [Report and artifacts](~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260727_153911_180690/) contain 24 successful envelopes / 16,800 timestamped, checksum-valid transfers, but the job targeted as `RZCXC19G1DM` used `10.146.6.13:5555` for all three loops (TCP ADB). Preserve the artifacts; do not analyze as a USB result or launch latency. Fix device selection and rerun the entire `.55` host batch. |
+| 2026-07-27 | `.55` (`test-1`) | One-device latency smoke (`RZCXC19G1DM`) | `v0.4.2` | `fleetbench-usb-latency-smoke-v0.4.2-10.146.2.55` | **Pass — USB selected** | [Report and artifacts](~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260727_164924_600509/) contain three successful envelopes / 2,400 timestamped, checksum-valid transfers. All loops selected bare serial `RZCXC19G1DM`, not `IP:port`; this confirms the device is currently reachable over USB. |
+| 2026-07-27 | `.55` (`test-1`) | Bulk rerun | `v0.4.2` | `fleetbench-usb-bulk-v0.4.2-rerun-10.146.2.55` | **Complete — performance fail** | [Report and artifacts](~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260727_165839_878618/) contain 24 successful envelopes / 16,800 timestamped, checksum-valid transfers. All eight expected bare serials were selected, and transfer windows reached seven peers. The valid full-overlap cohort remains below the 20 MiB/s floor and above the approximately 5 s p95 target. |
+| 2026-07-27 | `.55` (`test-1`) | Latency rerun | `v0.4.2` | `fleetbench-usb-latency-v0.4.2-rerun-10.146.2.55` | **Complete — pass** | [Report and artifacts](~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/20260727_173231_344102/) contain 24 successful envelopes / 19,200 timestamped, checksum-valid transfers. All eight expected bare serials were selected; 25 B and 50 KiB all-sample latency pass their targets. Short transfer windows reached at most four peer devices, so this is not a full-contention tail-latency result. |
+
+#### 2026-07-27 — `.55` corrected-timing bulk rerun result
+
+The valid `v0.4.2` rerun completed with all eight expected USB serials; no
+device selected a TCP endpoint. It produced 24 successful JSON envelopes, all
+16,800 timestamps and SHA-256 checks passed, and 55 push plus 59 pull 100 MiB
+samples overlapped all seven peer devices.
+
+| Cohort | Direction | Samples | Median throughput | p95 elapsed time | Status |
+|---|---|---:|---:|---:|---|
+| All overlap levels | Push | 480 | 13.89 MiB/s | 11.92 s | Fail |
+| All overlap levels | Pull | 480 | 8.37 MiB/s | 12.91 s | Fail |
+| Seven peers (full eight-device overlap) | Push | 55 | 13.98 MiB/s | 7.30 s | Fail |
+| Seven peers (full eight-device overlap) | Pull | 59 | 13.47 MiB/s | 7.70 s | Fail |
+
+The corrected-timing full-overlap result is materially better than the
+2026-07-21 `v0.4.1` result (push: 8.86 MiB/s / 11.75 s; pull: 9.09 MiB/s /
+12.87 s), but it still misses the 20 MiB/s throughput floor and approximately
+5 s p95 target in both directions. Treat the version-to-version improvement
+as observational: this is a fresh host run, not a controlled experiment.
+
+#### 2026-07-27 — `.55` corrected-timing latency rerun result
+
+The valid `v0.4.2` latency rerun completed with all eight expected USB serials.
+It produced 24 successful JSON envelopes and 19,200 timestamped,
+checksum-valid transfers. Both all-sample distributions pass their respective
+targets:
+
+| Size | Samples | Mean | Median | Standard deviation | CV | IQR | MAD | p95 | p99 | Maximum | Status |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 25 B | 9,600 | 16.28 ms | 12.96 ms | 10.58 ms | 64.96% | 15.81 ms | 6.76 ms | 32.19 ms | 52.22 ms | 123.30 ms | Pass |
+| 50 KiB | 9,600 | 17.37 ms | 13.75 ms | 8.90 ms | 51.24% | 16.21 ms | 6.23 ms | 31.02 ms | 36.63 ms | 61.43 ms | Pass |
+
+The 25-byte result passes the 375 ms mean, 500 ms p95, and 750 ms p99
+criteria. The 50 KiB result passes both the 1 s p95 floor and the 500 ms
+preferred target. Full eight-device overlap did not occur: 25-byte transfers
+reached at most four peers (56 samples), and 50 KiB transfers reached at most
+four peers (3 samples). Treat the all-sample distributions as the reliable
+result; these short-transfer runs do not support a full-contention tail claim.
+
+This round **did not reproduce Sparky's high-latency tail**. That is not a
+contradiction of the historical result: the 25-byte windows here were only
+about 10–30 ms and never overlapped more than four peers, whereas Sparky's
+100-retrigger push-only probe produced much longer 280–1,600 ms windows. The
+late-starting `.55` jobs and short, unsynchronized transfer windows prevented
+the sustained high-concurrency condition needed for a like-for-like
+reproduction. The planned push-only, long-running overlap launcher is the
+follow-up experiment.
+
 Run these from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`.
 The scripts default to `v0.4.2`; `FLEETBENCH_VERSION=v0.4.2` is explicit here
 to make the rerun provenance unambiguous.
