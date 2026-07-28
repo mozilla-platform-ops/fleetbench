@@ -1,8 +1,11 @@
-# Host-wide Android USB/ADB test plan
+# Host-wide Android USB/ADB work log
 
-Status: execution plan for the LambdaTest HyperExecute saturation experiment.
+Status: chronological record of planning, commands, and observed results. For
+the current operator procedure, use
+[HOST_WIDE_ADB_RUNBOOK.md](HOST_WIDE_ADB_RUNBOOK.md). Some commands below are
+superseded and are retained only to preserve experiment provenance.
 
-## Goal
+## Archived original execution plan
 
 Measure end-to-end ADB push/pull behavior when every selected `a55-perf` phone
 on one physical Docker host is active at once. The primary signal is per-device
