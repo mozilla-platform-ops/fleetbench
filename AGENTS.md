@@ -7,6 +7,46 @@
 
 ---
 
+## Releases
+
+Releases are published automatically by `.github/workflows/release.yml` when
+an annotated `v*` tag is pushed. The workflow rejects a tag whose version does
+not match `collector/Cargo.toml`.
+
+1. Create and claim a release Beads issue.
+2. Choose the next version and update both `collector/Cargo.toml` and
+   `collector/Cargo.lock`. Update downloader defaults and current runbook
+   examples that should use the new release; do not rewrite historical logs.
+3. Run the relevant checks (at minimum `cargo test`, plus syntax checks for
+   any changed launchers or Python wrappers).
+4. Close the release issue, run `br sync --flush-only`, stage only the scoped
+   changes, commit using the issue-ID convention, and push the branch.
+5. Create and push the annotated tag:
+
+   ```bash
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin main vX.Y.Z
+   ```
+
+6. Monitor the GitHub Actions release workflow, confirm every job succeeds,
+   then verify the GitHub release is published with the expected platform
+   binaries and `SHA256SUMS` (especially the Linux asset used by host-wide
+   runners).
+7. Replace the workflow-generated release notes with a useful human summary.
+   Follow the recent-release format: `# Fleetbench vX.Y.Z`, short focused
+   `##` sections with outcome-oriented bullets, a `## Downloads` section, and
+   a final `**Full Changelog**` comparison link. For example:
+
+   ```bash
+   gh release edit vX.Y.Z --title vX.Y.Z --notes-file <prepared-notes.md>
+   ```
+
+   Keep the notes specific to the release: explain user-visible behavior,
+   new launchers or compatibility modes, and the release version callers
+   should use. Do not leave only GitHub's generated commit list.
+
+---
+
 ## Beads Workflow Integration
 
 This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`/`bd`) for issue tracking. Issues are stored in `.beads/` and tracked in git.
