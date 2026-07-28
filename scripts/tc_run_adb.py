@@ -23,7 +23,7 @@ import urllib.request
 from pathlib import Path
 
 # -- knobs --------------------------------------------------------------------
-FLEETBENCH_VERSION = os.environ.get("FLEETBENCH_VERSION", "v0.4.3")
+FLEETBENCH_VERSION = os.environ.get("FLEETBENCH_VERSION", "v0.4.4")
 FLEETBENCH_PLATFORM = os.environ.get("FLEETBENCH_PLATFORM", "linux-x86_64")
 FLEETBENCH_REPO = os.environ.get("FLEETBENCH_REPO", "mozilla-platform-ops/fleetbench")
 FLEETBENCH_ARGS = os.environ.get(
