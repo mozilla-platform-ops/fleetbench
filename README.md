@@ -133,6 +133,7 @@ fleetbench adb --json                                  # all defaults
 fleetbench adb --serial <id> --json                    # multi-device host
 fleetbench adb --sizes 25B,1M --iterations 25B=50,1M=20 --json
 fleetbench adb --direction push --sizes 25B --iterations 25B=200 --json # push-only probe
+fleetbench adb --direction push --push-mode mozdevice --sizes 25B --iterations 25B=200 --json # mozdevice-compatible push probe
 fleetbench adb --direction pull --sizes 25B --iterations 25B=200 --json # pull-only probe
 fleetbench adb --remote-path /sdcard/Download --json   # reproduce raptor's path
 ```
@@ -158,6 +159,11 @@ Operational model:
   run after the full push loop, and no pull measurements are taken.
   `--direction pull` stages unique remote source files before timing, then emits
   only contiguous pull samples and verifies them locally after the pull loop.
+- **Push mode.** `--push-mode direct` (the default) times one `adb push`.
+  `--push-mode mozdevice` requires `--direction push` and times the successful
+  `mozdevice.ADBDevice.push()` path: pre/post device sync, `wait-for-device
+  push`, and chmod where mozdevice applies it. It reuses one local payload to
+  match that probe; the selected mode is recorded in `adb_config.push_mode`.
 - **Sizes & iterations.** Defaults emphasize the 25-byte point (where vendor
   variance shows up — that workload is dominated by command/setup overhead,
   not bytes on the wire), then progressively larger transfers:

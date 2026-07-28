@@ -54,7 +54,7 @@ before launching the next one.
 | Phase | Launcher | Purpose |
 |---|---|---|
 | bulk | `run_bulk.sh` | Mixed push/pull baseline over 25 B, 1 MiB, 10 MiB, and 100 MiB. |
-| latency push, 25 B | `run_push_only.sh` | Sustained 25-byte push contention; Sparky reproduction. |
+| latency push, 25 B | `run_push_only.sh` | Sustained direct-push contention. Use `mozdevice` mode for the Sparky comparison. |
 | latency pull, 25 B | `run_pull_only.sh` | Sustained 25-byte pull contention. |
 | latency push, 50 KiB | `run_push_only.sh` | Sustained 50 KiB push contention. |
 | latency pull, 50 KiB | `run_pull_only.sh` | Sustained 50 KiB pull contention. |
@@ -93,6 +93,14 @@ launcher. For push, optionally add `--env FLEETBENCH_PUSH_ITERATIONS=5000`; for
 pull, use `--env FLEETBENCH_PULL_ITERATIONS=5000`. Substitute exactly one
 approved eight-device set and use a label that names its host, direction, and
 size. Never launch commands for the two hosts concurrently.
+
+### Sparky-compatible 25 B push phase
+
+For the historical `mozdevice.ADBDevice.push()` comparison, run the push-only
+launcher with `--env FLEETBENCH_PUSH_MODE=mozdevice` and `25B`. This mode times
+mozdevice's pre/post device syncs and its `wait-for-device push` path, rather
+than Fleetbench's default direct `adb push`. Use a release that contains
+`--push-mode`—the existing `v0.4.3` release does not.
 
 ## Validate and analyze
 

@@ -119,6 +119,11 @@ enum Command {
         /// 25B=200, 1M=100, 10M=30, 100M=10.
         #[arg(long)]
         iterations: Option<String>,
+        /// Push implementation to time. `direct` times one adb push; `mozdevice`
+        /// reproduces the multi-command behavior of mozdevice.ADBDevice.push.
+        /// mozdevice mode requires --direction push.
+        #[arg(long, value_enum, default_value_t = adb::PushMode::Direct)]
+        push_mode: adb::PushMode,
         #[arg(long)]
         json: bool,
     },
@@ -172,7 +177,7 @@ impl AdbDirection {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_duration_arg, AdbDirection, Cli, Command};
+    use super::{adb::PushMode, parse_duration_arg, AdbDirection, Cli, Command};
     use clap::Parser;
 
     #[test]
@@ -224,6 +229,23 @@ mod tests {
                 ..
             }
         ));
+
+        let mozdevice = Cli::try_parse_from([
+            "fleetbench",
+            "adb",
+            "--direction",
+            "push",
+            "--push-mode",
+            "mozdevice",
+        ])
+        .unwrap();
+        assert!(matches!(
+            mozdevice.command,
+            Command::Adb {
+                push_mode: PushMode::Mozdevice,
+                ..
+            }
+        ));
     }
 }
 
@@ -234,9 +256,25 @@ fn main() {
         Command::Cpu { mode, limit, iterations, threads, json, no_warmup, duration } => {
             cpu::run(mode, limit, iterations, &threads, json, !no_warmup, duration)
         }
-        Command::Adb { direction, serial, adb_path, remote_path, sizes, iterations, json } => {
-            adb::run(adb_path, serial, remote_path, sizes, iterations, direction.as_str(), json)
-        }
+        Command::Adb {
+            direction,
+            serial,
+            adb_path,
+            remote_path,
+            sizes,
+            iterations,
+            push_mode,
+            json,
+        } => adb::run(
+            adb_path,
+            serial,
+            remote_path,
+            sizes,
+            iterations,
+            direction.as_str(),
+            push_mode,
+            json,
+        ),
     };
     std::process::exit(exit_code);
 }

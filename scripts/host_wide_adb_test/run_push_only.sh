@@ -11,6 +11,8 @@ set -euo pipefail
 : "${FLEETBENCH_VERSION:?set FLEETBENCH_VERSION to a release containing --direction push}"
 PUSH_ITERATIONS="${FLEETBENCH_PUSH_ITERATIONS:-5000}"
 TRANSFER_SIZE="${FLEETBENCH_TRANSFER_SIZE:-25B}"
+PUSH_MODE="${FLEETBENCH_PUSH_MODE:-direct}"
+PUSH_MODE_ARGS=()
 ASSET="fleetbench-${FLEETBENCH_VERSION}-linux-x86_64"
 BASE_URL="https://github.com/mozilla-platform-ops/fleetbench/releases/download/${FLEETBENCH_VERSION}"
 ARTIFACT_DIR="${FLEETBENCH_ARTIFACT_DIR:-fleetbench-artifacts}"
@@ -26,6 +28,13 @@ case "$TRANSFER_SIZE" in
   25B|50K) ;;
   *) echo "FLEETBENCH_TRANSFER_SIZE must be 25B or 50K, got $TRANSFER_SIZE" >&2; exit 2 ;;
 esac
+if [ "${FLEETBENCH_PUSH_MODE+x}" = x ]; then
+  case "$PUSH_MODE" in
+    direct|mozdevice) ;;
+    *) echo "FLEETBENCH_PUSH_MODE must be direct or mozdevice, got $PUSH_MODE" >&2; exit 2 ;;
+  esac
+  PUSH_MODE_ARGS=(--push-mode "$PUSH_MODE")
+fi
 
 mkdir -p "$ARTIFACT_DIR"
 curl --fail --location --retry 3 --output "$ASSET" "$BASE_URL/$ASSET"
@@ -41,22 +50,24 @@ chmod +x "$ASSET"
   echo "direction=push"
   echo "remote_path=/sdcard/Download"
   echo "transfer_size=$TRANSFER_SIZE"
+  echo "push_mode=$PUSH_MODE"
   echo "iterations=$PUSH_ITERATIONS"
   echo "collector_invocations=1"
   date -u +"started_at_utc=%Y-%m-%dT%H:%M:%SZ"
 } > "$ARTIFACT_DIR/manifest.txt"
 
-json="$ARTIFACT_DIR/fleetbench-adb-push-only-${TRANSFER_SIZE}.json"
-log="$ARTIFACT_DIR/fleetbench-adb-push-only-${TRANSFER_SIZE}.log"
-echo "Push-only run: serial=$DEVICE_SERIAL size=$TRANSFER_SIZE iterations=$PUSH_ITERATIONS"
+json="$ARTIFACT_DIR/fleetbench-adb-push-only-${PUSH_MODE}-${TRANSFER_SIZE}.json"
+log="$ARTIFACT_DIR/fleetbench-adb-push-only-${PUSH_MODE}-${TRANSFER_SIZE}.log"
+echo "Push-only run: serial=$DEVICE_SERIAL mode=$PUSH_MODE size=$TRANSFER_SIZE iterations=$PUSH_ITERATIONS"
 if ! "./$ASSET" adb \
   --serial "$DEVICE_SERIAL" \
   --direction push \
+  "${PUSH_MODE_ARGS[@]}" \
   --remote-path /sdcard/Download \
   --sizes "$TRANSFER_SIZE" \
   --iterations "$TRANSFER_SIZE=$PUSH_ITERATIONS" \
   --json >"$json" 2>"$log"; then
-  echo "Sparky push-only run failed; preserving $json and $log" >&2
+  echo "Push-only run failed; preserving $json and $log" >&2
   exit 1
 fi
 

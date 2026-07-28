@@ -42,10 +42,12 @@ Speedometer asset staging or an ordinary end-to-end Speedometer job. The
 headline result was LambdaTest push latency spanning **280 → 1600 ms**, while
 BitBar stayed within **280 → 470 ms**.
 
-`fleetbench adb --sizes 25B --remote-path /sdcard/Download` is the controlled
-standalone analogue of that probe. It deliberately adds optional payload sizes,
-pull measurements, checksum verification, and raw per-iteration output; those
-are extensions, not properties of Sparky's original push-only test.
+`fleetbench adb --direction push --push-mode mozdevice --sizes 25B
+--remote-path /sdcard/Download` is the controlled standalone analogue of that
+probe. It deliberately adds raw per-iteration output and deferred checksum
+verification; those are extensions, not properties of Sparky's original test.
+The default `--push-mode direct` measures only one `adb push` and is therefore
+not interchangeable with the historical `mozdevice` measurement.
 
 ## The signal: distribution, not mean
 
@@ -87,10 +89,9 @@ and are the load-bearing parts of the methodology:
 - **Remote path defaults to `/data/local/tmp/`.** Avoids the FUSE layer on
   `/sdcard` for a cleaner USB/adb signal. Use `--remote-path /sdcard/Download`
   to reproduce raptor's path exactly.
-- **Defeat the page cache.** Pre-generate N *distinct* random files (one per
-  iteration, xorshift64 fill) before the timed section. Generate-once-and-reuse
-  would partly measure the Linux page cache, not USB. Dropping caches between
-  iterations was rejected (needs root, host-disruptive).
+- **Payload behavior.** Direct mode pre-generates N *distinct* random files
+  (one per iteration, xorshift64 fill) before timing to defeat page-cache reuse.
+  Mozdevice mode reuses one local payload because Sparky's probe did so.
 - **Round-trip verification on separate paths.** Push → `device:/data/local/tmp/X`,
   pull → `orig.pulled`, SHA256 compare; never overwrite the source. Push is
   verified with `adb shell sha256sum` **after its complete timed push loop**,
@@ -187,9 +188,9 @@ cleanly surfaced a ~100× performance difference with only n=2–5 per size.
 
 Each timed transfer emits: device serial, device model, hub path (lsusb), file
 size, direction (push/pull), transfer start/end timestamps in UTC with
-microsecond precision, bytes/sec, `elapsed_ms`, `sha256_ok`. The timestamps
-bracket only the timed `adb push`/`pull` subprocess, so independently scheduled
-workers can be correlated by actual transfer overlap. These land in
+microsecond precision, bytes/sec, `elapsed_ms`, `sha256_ok`. Direct-mode
+timestamps bracket one `adb push`/`pull` subprocess; mozdevice-mode timestamps
+bracket its complete compatibility sequence. These land in
 `adb_results.iterations` in a schema-compatible envelope
 (`schema_version`, `host`, `env`, `config`, `results` siblings:
 `adb_config` / `adb_env` / `adb_results`).

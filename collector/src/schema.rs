@@ -162,6 +162,9 @@ pub struct AdbConfig {
     /// `both` runs the traditional push/pull benchmark; `push` or `pull` runs
     /// only the requested contiguous direction and verifies it after its loop.
     pub direction: String,
+    /// `direct` times one adb push. `mozdevice` times the compatibility
+    /// sequence used by mozdevice.ADBDevice.push.
+    pub push_mode: String,
     pub sizes: Vec<AdbSizeSpec>,
 }
 

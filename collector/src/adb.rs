@@ -12,6 +12,7 @@ use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{SecondsFormat, Utc};
+use clap::ValueEnum;
 use sha2::{Digest, Sha256};
 use sysinfo::System;
 
@@ -60,6 +61,21 @@ const DEFAULT_SIZES: &[SizeDefault] = &[
     },
 ];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum PushMode {
+    Direct,
+    Mozdevice,
+}
+
+impl PushMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Mozdevice => "mozdevice",
+        }
+    }
+}
+
 pub fn run(
     adb_path: Option<String>,
     serial: Option<String>,
@@ -67,6 +83,7 @@ pub fn run(
     sizes_arg: Option<String>,
     iterations_arg: Option<String>,
     direction: &str,
+    push_mode: PushMode,
     json: bool,
 ) -> i32 {
     let mut sys = System::new();
@@ -108,6 +125,7 @@ pub fn run(
         serial: serial.clone(),
         remote_path: remote_dir.clone(),
         direction: direction.into(),
+        push_mode: push_mode.as_str().into(),
         sizes: specs
             .iter()
             .map(|s| AdbSizeSpec {
@@ -116,6 +134,21 @@ pub fn run(
             })
             .collect(),
     };
+
+    if push_mode == PushMode::Mozdevice && direction != "push" {
+        return emit_failure(
+            json,
+            host,
+            cpu,
+            Some(adb_config),
+            None,
+            ErrorInfo {
+                kind: ERR_INVALID_ARGUMENTS.into(),
+                message: "--push-mode mozdevice requires --direction push".into(),
+            },
+            EXIT_RUNTIME_ERROR,
+        );
+    }
 
     // Capture adb --version and lsusb topology up front.
     let adb_version = capture_adb_version(&adb_bin);
@@ -159,6 +192,7 @@ pub fn run(
         &specs,
         direction != "pull",
         direction != "push",
+        push_mode,
     );
 
     let load_post_timed = sample_load();
@@ -446,6 +480,7 @@ fn run_iterations(
     specs: &[ResolvedSize],
     timed_push: bool,
     timed_pull: bool,
+    push_mode: PushMode,
 ) -> Result<Vec<AdbIteration>, ErrorInfo> {
     let mut all = Vec::new();
     let tty = std::io::stderr().is_terminal();
@@ -475,17 +510,33 @@ fn run_iterations(
     for spec in specs {
         let n = spec.iterations as usize;
         let size_label = format_size(spec.bytes);
-        progress_line(tty, &format!("adb: [{size_label}] generating {n} payloads"));
-        // Pre-generate N unique local payloads to defeat page-cache reuse.
-        let mut local_files: Vec<(PathBuf, [u8; 32])> = Vec::with_capacity(n);
-        for i in 0..n {
-            let path = work_dir.join(format!("payload_{}_{i}.bin", spec.bytes));
+        let local_files = if push_mode == PushMode::Mozdevice {
+            // mozdevice.push() receives the same local file on every iteration.
+            // Preserve that behavior for an apples-to-apples compatibility mode.
+            progress_line(
+                tty,
+                &format!("adb: [{size_label}] generating one reusable payload"),
+            );
+            let path = work_dir.join(format!("mozdevice_payload_{}.bin", spec.bytes));
             let hash = generate_random_file(&path, spec.bytes).map_err(|e| ErrorInfo {
                 kind: ERR_IO.into(),
                 message: format!("failed to create payload {}: {e}", path.display()),
             })?;
-            local_files.push((path, hash));
-        }
+            vec![(path, hash); n]
+        } else {
+            progress_line(tty, &format!("adb: [{size_label}] generating {n} payloads"));
+            // Pre-generate N unique local payloads to defeat page-cache reuse.
+            let mut local_files: Vec<(PathBuf, [u8; 32])> = Vec::with_capacity(n);
+            for i in 0..n {
+                let path = work_dir.join(format!("payload_{}_{i}.bin", spec.bytes));
+                let hash = generate_random_file(&path, spec.bytes).map_err(|e| ErrorInfo {
+                    kind: ERR_IO.into(),
+                    message: format!("failed to create payload {}: {e}", path.display()),
+                })?;
+                local_files.push((path, hash));
+            }
+            local_files
+        };
 
         // Pull-only mode needs remote source files, but their upload is setup
         // rather than a measurement. Complete it before the contiguous timed
@@ -534,28 +585,18 @@ fn run_iterations(
                 let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
                 let transfer_started_at_utc = transfer_timestamp_utc();
                 let t0 = Instant::now();
-                let status = Command::new(adb)
-                    .args([
-                        "-s",
-                        &device.serial,
-                        "push",
-                        path.to_str().unwrap(),
-                        &remote,
-                    ])
-                    .output()
-                    .map_err(|e| ErrorInfo {
-                        kind: ERR_ADB_COMMAND_FAILED.into(),
-                        message: format!("adb push spawn failed: {e}"),
-                    })?;
+                let push_result = match push_mode {
+                    PushMode::Direct => direct_push(adb, &device.serial, path, &remote),
+                    PushMode::Mozdevice => mozdevice_push(adb, &device.serial, path, &remote),
+                };
                 let elapsed = t0.elapsed();
                 let transfer_finished_at_utc = transfer_timestamp_utc();
-                if !status.status.success() {
+                if let Err(message) = push_result {
                     return Err(ErrorInfo {
                         kind: ERR_ADB_COMMAND_FAILED.into(),
                         message: format!(
-                            "adb push failed (size={} iter={i}): {}",
-                            spec.bytes,
-                            String::from_utf8_lossy(&status.stderr).trim()
+                            "adb push failed (size={} iter={i}): {message}",
+                            spec.bytes
                         ),
                     });
                 }
@@ -674,6 +715,74 @@ fn run_iterations(
     progress_line(tty, "adb: done");
 
     Ok(all)
+}
+
+fn direct_push(adb: &str, serial: &str, local: &Path, remote: &str) -> Result<(), String> {
+    let local = local
+        .to_str()
+        .ok_or_else(|| format!("local path is not valid UTF-8: {}", local.display()))?;
+    run_adb_step(adb, serial, &["push", local, remote], "push")
+}
+
+/// Execute the successful-path sequence used by `mozdevice.ADBDevice.push`.
+///
+/// The public mozdevice method calls `sync` before and after every push and
+/// its command wrapper prepends `wait-for-device`. On internal storage it also
+/// runs `chmod -R 777`; mozdevice intentionally skips chmod on external
+/// storage such as /sdcard/Download, the path used by Sparky's probe.
+fn mozdevice_push(adb: &str, serial: &str, local: &Path, remote: &str) -> Result<(), String> {
+    let local = local
+        .to_str()
+        .ok_or_else(|| format!("local path is not valid UTF-8: {}", local.display()))?;
+    run_adb_step(
+        adb,
+        serial,
+        &["wait-for-device", "shell", "sync"],
+        "pre-push sync",
+    )?;
+    run_adb_step(
+        adb,
+        serial,
+        &["wait-for-device", "push", local, remote],
+        "push",
+    )?;
+    if !is_external_storage_path(remote) {
+        run_adb_step(
+            adb,
+            serial,
+            &["wait-for-device", "shell", "chmod", "-R", "777", remote],
+            "post-push chmod",
+        )?;
+    }
+    run_adb_step(
+        adb,
+        serial,
+        &["wait-for-device", "shell", "sync"],
+        "post-push sync",
+    )
+}
+
+fn run_adb_step(adb: &str, serial: &str, args: &[&str], step: &str) -> Result<(), String> {
+    let output = Command::new(adb)
+        .args(["-s", serial])
+        .args(args)
+        .output()
+        .map_err(|e| format!("{step} spawn failed: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{step} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+fn is_external_storage_path(path: &str) -> bool {
+    path == "/sdcard"
+        || path.starts_with("/sdcard/")
+        || path == "/storage"
+        || path.starts_with("/storage/")
 }
 
 /// RFC 3339 UTC timestamp with microsecond precision. This is intentionally
@@ -1089,6 +1198,7 @@ mod tests {
             }],
             true,
             false,
+            PushMode::Direct,
         )
         .unwrap();
 
@@ -1129,6 +1239,7 @@ mod tests {
             }],
             false,
             true,
+            PushMode::Direct,
         )
         .unwrap();
 
@@ -1154,6 +1265,69 @@ mod tests {
             2
         );
         assert!(!commands.iter().any(|line| line.contains(" sha256sum ")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mozdevice_push_mode_matches_the_external_storage_sequence() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("fb-adb-mozdevice-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("commands.log");
+        let adb = dir.join("fake-adb");
+        fs::write(
+            &adb,
+            format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n", log.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&adb, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let device = Device {
+            serial: "device".into(),
+            model: "model".into(),
+            hub_path: None,
+        };
+        let results = run_iterations(
+            adb.to_str().unwrap(),
+            &device,
+            "/sdcard/Download/",
+            &[ResolvedSize {
+                bytes: 25,
+                iterations: 2,
+            }],
+            true,
+            false,
+            PushMode::Mozdevice,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 2);
+        let commands: Vec<_> = fs::read_to_string(&log)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|line| line.contains("wait-for-device shell sync"))
+                .count(),
+            4
+        );
+        let pushes: Vec<_> = commands
+            .iter()
+            .filter(|line| line.contains("wait-for-device push"))
+            .collect();
+        assert_eq!(pushes.len(), 2);
+        let first_local = pushes[0].split_whitespace().nth(4).unwrap();
+        let second_local = pushes[1].split_whitespace().nth(4).unwrap();
+        assert_eq!(first_local, second_local);
+        assert!(!commands.iter().any(|line| line.contains(" chmod ")));
+        assert!(is_external_storage_path("/sdcard/Download/file"));
+        assert!(!is_external_storage_path("/data/local/tmp/file"));
         let _ = fs::remove_dir_all(&dir);
     }
 }
