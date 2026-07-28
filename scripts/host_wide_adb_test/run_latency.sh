@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Run inside one lt_run_cmd HyperExecute job. This is the production-path
-# 25-byte and 50 KiB latency phase. Configure lt_run_cmd to upload
-# fleetbench-artifacts/**.
+# Run inside one lt_run_cmd HyperExecute job. This is a short production-path
+# 25-byte and 50 KiB baseline/smoke phase, not a sustained-contention test.
+# Use the directional long-running launchers for full-contention tail latency.
+# Configure lt_run_cmd to upload fleetbench-artifacts/**.
 
 set -euo pipefail
 

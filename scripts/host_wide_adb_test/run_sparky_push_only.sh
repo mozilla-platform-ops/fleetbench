@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run inside one lt_run_cmd HyperExecute job. Reproduces Sparky's contention
-# probe: one long-lived, push-only 25-byte collector invocation per device.
+# probe: one long-lived, push-only collector invocation per device.
 # Configure lt_run_cmd to upload fleetbench-artifacts/**.
 
 set -euo pipefail
@@ -10,6 +10,7 @@ set -euo pipefail
 # This launcher requires a release containing `fleetbench adb --direction push`.
 : "${FLEETBENCH_VERSION:?set FLEETBENCH_VERSION to a release containing --direction push}"
 PUSH_ITERATIONS="${FLEETBENCH_PUSH_ITERATIONS:-5000}"
+TRANSFER_SIZE="${FLEETBENCH_TRANSFER_SIZE:-25B}"
 ASSET="fleetbench-${FLEETBENCH_VERSION}-linux-x86_64"
 BASE_URL="https://github.com/mozilla-platform-ops/fleetbench/releases/download/${FLEETBENCH_VERSION}"
 ARTIFACT_DIR="${FLEETBENCH_ARTIFACT_DIR:-fleetbench-artifacts}"
@@ -21,6 +22,10 @@ if [ "$PUSH_ITERATIONS" -lt 1 ]; then
   echo "FLEETBENCH_PUSH_ITERATIONS must be at least 1" >&2
   exit 2
 fi
+case "$TRANSFER_SIZE" in
+  25B|50K) ;;
+  *) echo "FLEETBENCH_TRANSFER_SIZE must be 25B or 50K, got $TRANSFER_SIZE" >&2; exit 2 ;;
+esac
 
 mkdir -p "$ARTIFACT_DIR"
 curl --fail --location --retry 3 --output "$ASSET" "$BASE_URL/$ASSET"
@@ -35,21 +40,21 @@ chmod +x "$ASSET"
   echo "fleetbench_version=$FLEETBENCH_VERSION"
   echo "direction=push"
   echo "remote_path=/sdcard/Download"
-  echo "size_bytes=25"
+  echo "transfer_size=$TRANSFER_SIZE"
   echo "iterations=$PUSH_ITERATIONS"
   echo "collector_invocations=1"
   date -u +"started_at_utc=%Y-%m-%dT%H:%M:%SZ"
 } > "$ARTIFACT_DIR/manifest.txt"
 
-json="$ARTIFACT_DIR/fleetbench-adb-sparky-push-only.json"
-log="$ARTIFACT_DIR/fleetbench-adb-sparky-push-only.log"
-echo "Sparky push-only run: serial=$DEVICE_SERIAL iterations=$PUSH_ITERATIONS"
+json="$ARTIFACT_DIR/fleetbench-adb-sparky-push-only-${TRANSFER_SIZE}.json"
+log="$ARTIFACT_DIR/fleetbench-adb-sparky-push-only-${TRANSFER_SIZE}.log"
+echo "Sparky push-only run: serial=$DEVICE_SERIAL size=$TRANSFER_SIZE iterations=$PUSH_ITERATIONS"
 if ! "./$ASSET" adb \
   --serial "$DEVICE_SERIAL" \
   --direction push \
   --remote-path /sdcard/Download \
-  --sizes 25B \
-  --iterations "25B=$PUSH_ITERATIONS" \
+  --sizes "$TRANSFER_SIZE" \
+  --iterations "$TRANSFER_SIZE=$PUSH_ITERATIONS" \
   --json >"$json" 2>"$log"; then
   echo "Sparky push-only run failed; preserving $json and $log" >&2
   exit 1

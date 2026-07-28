@@ -24,7 +24,7 @@ windows, never from job submission or start time.
   batches.
 - Use `--env FLEETBENCH_VERSION=<release>` to forward the direction-capable
   release into each remote job. The long-running launchers default to 5,000
-  iterations; override that with the matching `--env` option when needed.
+  iterations and 25 B; override them with `--env` when needed.
 - Stop and preserve artifacts if any job selects TCP ADB, selects a serial
   other than its target, loses a device, fails SHA-256 verification, or omits
   transfer timestamps. Fix the cause and rerun the full host; do not pool a
@@ -46,7 +46,7 @@ to the stated host, and is reachable through bare USB serial selection. A
 one-device smoke is appropriate when that needs verification; it is not a
 saturation result.
 
-## Run each host in three phases
+## Run each host in five sustained-contention phases
 
 Download and validate the JSON, log, and manifest artifacts after every phase
 before launching the next one.
@@ -54,13 +54,17 @@ before launching the next one.
 | Phase | Launcher | Purpose |
 |---|---|---|
 | bulk | `run_bulk.sh` | Mixed push/pull baseline over 25 B, 1 MiB, 10 MiB, and 100 MiB. |
-| latency push | `run_sparky_push_only.sh` | One long, contiguous 25-byte push loop per device. |
-| latency pull | `run_pull_only.sh` | One long, contiguous 25-byte pull loop per device. |
+| latency push, 25 B | `run_sparky_push_only.sh` | Sustained 25-byte push contention; Sparky reproduction. |
+| latency pull, 25 B | `run_pull_only.sh` | Sustained 25-byte pull contention. |
+| latency push, 50 KiB | `run_sparky_push_only.sh` | Sustained 50 KiB push contention. |
+| latency pull, 50 KiB | `run_pull_only.sh` | Sustained 50 KiB pull contention. |
 
 Do not set `FLEETBENCH_RUNS` for these runs. Repeating a long-running push/pull
 collector invocation introduces gaps and weakens overlap. Pass configuration to
 the remote jobs with `--env`, rather than with shell assignments before
-`lt_run_cmd`.
+`lt_run_cmd`. `run_latency.sh` remains useful for a short mixed-direction
+25 B/50 KiB baseline or artifact smoke, but it is not evidence of sustained
+full-contention tail latency.
 
 ## Launch template
 
@@ -71,6 +75,7 @@ source lt_env.sh
 
 lt_run_cmd \
   --env FLEETBENCH_VERSION=v0.4.3 \
+  --env FLEETBENCH_TRANSFER_SIZE=25B \
   --script ~/git/fleetbench/scripts/host_wide_adb_test/<launcher> \
   --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
   --artifact-path 'fleetbench-artifacts/**' \
@@ -83,10 +88,11 @@ lt_run_cmd \
   --device <serial-7> --device <serial-8>
 ```
 
-For push, optionally add `--env FLEETBENCH_PUSH_ITERATIONS=5000`; for pull, use
-`--env FLEETBENCH_PULL_ITERATIONS=5000`. Substitute exactly one approved
-eight-device set and use a label that names its host and phase. Never launch
-commands for the two hosts concurrently.
+Use `--env FLEETBENCH_TRANSFER_SIZE=25B` or `50K` with either directional
+launcher. For push, optionally add `--env FLEETBENCH_PUSH_ITERATIONS=5000`; for
+pull, use `--env FLEETBENCH_PULL_ITERATIONS=5000`. Substitute exactly one
+approved eight-device set and use a label that names its host, direction, and
+size. Never launch commands for the two hosts concurrently.
 
 ## Validate and analyze
 
