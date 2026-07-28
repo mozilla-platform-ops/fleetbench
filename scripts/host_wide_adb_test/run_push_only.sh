@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run inside one lt_run_cmd HyperExecute job. Reproduces Sparky's contention
-# probe: one long-lived, push-only collector invocation per device.
+# Run inside one lt_run_cmd HyperExecute job. Runs one long-lived, push-only
+# collector invocation per device for sustained-contention analysis.
 # Configure lt_run_cmd to upload fleetbench-artifacts/**.
 
 set -euo pipefail
@@ -35,7 +35,7 @@ awk -v asset="$ASSET" '$2 == asset { found = 1; print } END { exit !found }' SHA
 chmod +x "$ASSET"
 
 {
-  echo "phase=sparky-push-only-overlap"
+  echo "phase=push-only-overlap"
   echo "device_serial=$DEVICE_SERIAL"
   echo "fleetbench_version=$FLEETBENCH_VERSION"
   echo "direction=push"
@@ -46,9 +46,9 @@ chmod +x "$ASSET"
   date -u +"started_at_utc=%Y-%m-%dT%H:%M:%SZ"
 } > "$ARTIFACT_DIR/manifest.txt"
 
-json="$ARTIFACT_DIR/fleetbench-adb-sparky-push-only-${TRANSFER_SIZE}.json"
-log="$ARTIFACT_DIR/fleetbench-adb-sparky-push-only-${TRANSFER_SIZE}.log"
-echo "Sparky push-only run: serial=$DEVICE_SERIAL size=$TRANSFER_SIZE iterations=$PUSH_ITERATIONS"
+json="$ARTIFACT_DIR/fleetbench-adb-push-only-${TRANSFER_SIZE}.json"
+log="$ARTIFACT_DIR/fleetbench-adb-push-only-${TRANSFER_SIZE}.log"
+echo "Push-only run: serial=$DEVICE_SERIAL size=$TRANSFER_SIZE iterations=$PUSH_ITERATIONS"
 if ! "./$ASSET" adb \
   --serial "$DEVICE_SERIAL" \
   --direction push \

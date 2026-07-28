@@ -171,7 +171,7 @@ The 2026-07-16 host mapping snapshot was:
 |---|---|---|---|
 | Original `.55` / `.47` saturation | `run_bulk.sh`, `run_latency.sh` | `v0.4.1` | Historical only; verification occurred between timed transfers. |
 | Corrected `.55` reruns | `run_bulk.sh`, `run_latency.sh` | `v0.4.2` | Historical only; results are recorded above. |
-| Planned directional reproduction | `run_sparky_push_only.sh`, `run_pull_only.sh` | Explicit direction-capable release | Superseded by the current `v0.4.3` runbook. |
+| Planned directional reproduction | `run_push_only.sh` (formerly `run_sparky_push_only.sh`), `run_pull_only.sh` | Explicit direction-capable release | Superseded by the current `v0.4.3` runbook. |
 
 Historical artifacts remain in the corresponding
 `~/git/mozilla-bitbar-devicepool/lt_run_cmd_output/<timestamp>/` directories.

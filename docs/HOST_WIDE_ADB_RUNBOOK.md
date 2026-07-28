@@ -54,9 +54,9 @@ before launching the next one.
 | Phase | Launcher | Purpose |
 |---|---|---|
 | bulk | `run_bulk.sh` | Mixed push/pull baseline over 25 B, 1 MiB, 10 MiB, and 100 MiB. |
-| latency push, 25 B | `run_sparky_push_only.sh` | Sustained 25-byte push contention; Sparky reproduction. |
+| latency push, 25 B | `run_push_only.sh` | Sustained 25-byte push contention; Sparky reproduction. |
 | latency pull, 25 B | `run_pull_only.sh` | Sustained 25-byte pull contention. |
-| latency push, 50 KiB | `run_sparky_push_only.sh` | Sustained 50 KiB push contention. |
+| latency push, 50 KiB | `run_push_only.sh` | Sustained 50 KiB push contention. |
 | latency pull, 50 KiB | `run_pull_only.sh` | Sustained 50 KiB pull contention. |
 
 Do not set `FLEETBENCH_RUNS` for these runs. Repeating a long-running push/pull
