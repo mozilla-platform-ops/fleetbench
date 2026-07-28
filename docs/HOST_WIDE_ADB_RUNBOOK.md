@@ -22,9 +22,9 @@ windows, never from job submission or start time.
   unavailable, defer the entire host.
 - Use `--parallel 8`, `--start-delay 0`, and `--retries 0` for saturation
   batches.
-- Set `FLEETBENCH_VERSION` explicitly for every launch. The long-running
-  push/pull phases require a release supporting `adb --direction push` and
-  `adb --direction pull` (currently `v0.4.3`).
+- Use `--env FLEETBENCH_VERSION=<release>` to forward the direction-capable
+  release into each remote job. The long-running launchers default to 5,000
+  iterations; override that with the matching `--env` option when needed.
 - Stop and preserve artifacts if any job selects TCP ADB, selects a serial
   other than its target, loses a device, fails SHA-256 verification, or omits
   transfer timestamps. Fix the cause and rerun the full host; do not pool a
@@ -57,11 +57,10 @@ before launching the next one.
 | latency push | `run_sparky_push_only.sh` | One long, contiguous 25-byte push loop per device. |
 | latency pull | `run_pull_only.sh` | One long, contiguous 25-byte pull loop per device. |
 
-Do not set `FLEETBENCH_RUNS` for these runs. In particular, repeating a
-long-running push/pull collector invocation introduces gaps and weakens
-overlap. The push and pull launchers default to 5,000 iterations; adjust only
-`FLEETBENCH_PUSH_ITERATIONS` or `FLEETBENCH_PULL_ITERATIONS` if the host timeout
-budget requires it.
+Do not set `FLEETBENCH_RUNS` for these runs. Repeating a long-running push/pull
+collector invocation introduces gaps and weakens overlap. Pass configuration to
+the remote jobs with `--env`, rather than with shell assignments before
+`lt_run_cmd`.
 
 ## Launch template
 
@@ -70,7 +69,8 @@ From `~/git/mozilla-bitbar-devicepool`:
 ```bash
 source lt_env.sh
 
-FLEETBENCH_VERSION=v0.4.3 lt_run_cmd \
+lt_run_cmd \
+  --env FLEETBENCH_VERSION=v0.4.3 \
   --script ~/git/fleetbench/scripts/host_wide_adb_test/<launcher> \
   --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
   --artifact-path 'fleetbench-artifacts/**' \
@@ -83,11 +83,10 @@ FLEETBENCH_VERSION=v0.4.3 lt_run_cmd \
   --device <serial-7> --device <serial-8>
 ```
 
-For the push phase, prefix the command with
-`FLEETBENCH_PUSH_ITERATIONS=5000`; for pull, use
-`FLEETBENCH_PULL_ITERATIONS=5000`. Substitute exactly one approved eight-device
-set and use a label that names its host and phase. Never launch commands for
-the two hosts concurrently.
+For push, optionally add `--env FLEETBENCH_PUSH_ITERATIONS=5000`; for pull, use
+`--env FLEETBENCH_PULL_ITERATIONS=5000`. Substitute exactly one approved
+eight-device set and use a label that names its host and phase. Never launch
+commands for the two hosts concurrently.
 
 ## Validate and analyze
 
