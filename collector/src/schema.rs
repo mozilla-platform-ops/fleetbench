@@ -159,6 +159,9 @@ pub struct AdbConfig {
     pub adb_path: String,
     pub serial: Option<String>,
     pub remote_path: String,
+    /// `both` runs the traditional push/pull benchmark; `push` runs only
+    /// contiguous push samples and verifies them once the loop completes.
+    pub direction: String,
     pub sizes: Vec<AdbSizeSpec>,
 }
 

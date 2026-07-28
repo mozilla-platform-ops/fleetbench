@@ -132,6 +132,7 @@ For proposed device-lab vendor requirements and the acceptance procedure, see
 fleetbench adb --json                                  # all defaults
 fleetbench adb --serial <id> --json                    # multi-device host
 fleetbench adb --sizes 25B,1M --iterations 25B=50,1M=20 --json
+fleetbench adb --direction push --sizes 25B --iterations 25B=200 --json # Sparky-style probe
 fleetbench adb --remote-path /sdcard/Download --json   # reproduce raptor's path
 ```
 
@@ -151,6 +152,9 @@ Operational model:
 - **Verification.** Push is checked via `adb shell sha256sum`; pull is checked
   by hashing the file locally. A failed hash sets `sha256_ok = false` on that
   iteration and exits non-zero (`exit 2`, correctness failure).
+- **Direction.** `--direction both` is the default. `--direction push` emits
+  only push samples: all timed pushes remain contiguous, remote SHA-256 checks
+  run after the full push loop, and no pull measurements are taken.
 - **Sizes & iterations.** Defaults emphasize the 25-byte point (where vendor
   variance shows up — that workload is dominated by command/setup overhead,
   not bytes on the wire), then progressively larger transfers:

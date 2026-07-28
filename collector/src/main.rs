@@ -93,6 +93,10 @@ enum Command {
     /// distribution is the signal, not the mean. Run multiple invocations
     /// concurrently at the orchestrator layer to observe USB contention.
     Adb {
+        /// Transfer directions to time. `both` (the default) records push
+        /// then pull samples; `push` records only a contiguous push window.
+        #[arg(long, value_enum, default_value_t = AdbDirection::Both)]
+        direction: AdbDirection,
         /// Device serial to target. Required if more than one device is
         /// attached.
         #[arg(long)]
@@ -149,9 +153,25 @@ enum Mode {
     Long,
 }
 
+#[derive(Copy, Clone, ValueEnum)]
+enum AdbDirection {
+    Both,
+    Push,
+}
+
+impl AdbDirection {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Both => "both",
+            Self::Push => "push",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_duration_arg;
+    use super::{parse_duration_arg, AdbDirection, Cli, Command};
+    use clap::Parser;
 
     #[test]
     fn parses_bare_seconds() {
@@ -173,6 +193,27 @@ mod tests {
         assert!(parse_duration_arg("10x").is_err());
         assert!(parse_duration_arg("abc").is_err());
     }
+
+    #[test]
+    fn adb_direction_defaults_to_both_and_accepts_push() {
+        let default = Cli::try_parse_from(["fleetbench", "adb"]).unwrap();
+        assert!(matches!(
+            default.command,
+            Command::Adb {
+                direction: AdbDirection::Both,
+                ..
+            }
+        ));
+
+        let push = Cli::try_parse_from(["fleetbench", "adb", "--direction", "push"]).unwrap();
+        assert!(matches!(
+            push.command,
+            Command::Adb {
+                direction: AdbDirection::Push,
+                ..
+            }
+        ));
+    }
 }
 
 fn main() {
@@ -182,8 +223,8 @@ fn main() {
         Command::Cpu { mode, limit, iterations, threads, json, no_warmup, duration } => {
             cpu::run(mode, limit, iterations, &threads, json, !no_warmup, duration)
         }
-        Command::Adb { serial, adb_path, remote_path, sizes, iterations, json } => {
-            adb::run(adb_path, serial, remote_path, sizes, iterations, json)
+        Command::Adb { direction, serial, adb_path, remote_path, sizes, iterations, json } => {
+            adb::run(adb_path, serial, remote_path, sizes, iterations, direction.as_str(), json)
         }
     };
     std::process::exit(exit_code);

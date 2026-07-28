@@ -66,6 +66,7 @@ pub fn run(
     remote_path: String,
     sizes_arg: Option<String>,
     iterations_arg: Option<String>,
+    direction: &str,
     json: bool,
 ) -> i32 {
     let mut sys = System::new();
@@ -106,6 +107,7 @@ pub fn run(
         adb_path: adb_bin.clone(),
         serial: serial.clone(),
         remote_path: remote_dir.clone(),
+        direction: direction.into(),
         sizes: specs
             .iter()
             .map(|s| AdbSizeSpec {
@@ -150,7 +152,7 @@ pub fn run(
     let load_pre_warmup = sample_load();
     let load_pre_timed = sample_load();
 
-    let run_result = run_iterations(&adb_bin, &device, &remote_dir, &specs);
+    let run_result = run_iterations(&adb_bin, &device, &remote_dir, &specs, direction == "push");
 
     let load_post_timed = sample_load();
     let environment = Some(Environment {
@@ -435,6 +437,7 @@ fn run_iterations(
     device: &Device,
     remote_dir: &str,
     specs: &[ResolvedSize],
+    push_only: bool,
 ) -> Result<Vec<AdbIteration>, ErrorInfo> {
     let mut all = Vec::new();
     let tty = std::io::stderr().is_terminal();
@@ -544,74 +547,76 @@ fn run_iterations(
                 verify_remote_sha256(adb, &device.serial, &remote, &expected_hash);
         }
 
-        // PULL timed loop — pulls each previously-pushed remote file to a
-        // distinct local path. As with pushes, defer local hashing and file
-        // removal until after the full timed loop so that no local filesystem
-        // work paces the next pull sample.
-        progress_line(tty, &format!("adb: [{size_label}] pulling"));
-        let mut pulled_for_verification = Vec::with_capacity(n);
-        for (i, (_path, expected_hash)) in local_files.iter().enumerate() {
-            progress_inplace(tty, &format!("adb: [{size_label}] pull {}/{n}", i + 1));
-            let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
-            let local_pulled = work_dir.join(format!("pulled_{}_{i}.bin", spec.bytes));
-            let transfer_started_at_utc = transfer_timestamp_utc();
-            let t0 = Instant::now();
-            let status = Command::new(adb)
-                .args([
-                    "-s",
-                    &device.serial,
-                    "pull",
-                    &remote,
-                    local_pulled.to_str().unwrap(),
-                ])
-                .output()
-                .map_err(|e| ErrorInfo {
-                    kind: ERR_ADB_COMMAND_FAILED.into(),
-                    message: format!("adb pull spawn failed: {e}"),
-                })?;
-            let elapsed = t0.elapsed();
-            let transfer_finished_at_utc = transfer_timestamp_utc();
-            if !status.status.success() {
-                return Err(ErrorInfo {
-                    kind: ERR_ADB_COMMAND_FAILED.into(),
-                    message: format!(
-                        "adb pull failed (size={} iter={i}): {}",
-                        spec.bytes,
-                        String::from_utf8_lossy(&status.stderr).trim()
-                    ),
+        if !push_only {
+            // PULL timed loop — pulls each previously-pushed remote file to a
+            // distinct local path. As with pushes, defer local hashing and file
+            // removal until after the full timed loop so that no local filesystem
+            // work paces the next pull sample.
+            progress_line(tty, &format!("adb: [{size_label}] pulling"));
+            let mut pulled_for_verification = Vec::with_capacity(n);
+            for (i, (_path, expected_hash)) in local_files.iter().enumerate() {
+                progress_inplace(tty, &format!("adb: [{size_label}] pull {}/{n}", i + 1));
+                let remote = format!("{remote_dir}fleetbench_{}_{i}.bin", spec.bytes);
+                let local_pulled = work_dir.join(format!("pulled_{}_{i}.bin", spec.bytes));
+                let transfer_started_at_utc = transfer_timestamp_utc();
+                let t0 = Instant::now();
+                let status = Command::new(adb)
+                    .args([
+                        "-s",
+                        &device.serial,
+                        "pull",
+                        &remote,
+                        local_pulled.to_str().unwrap(),
+                    ])
+                    .output()
+                    .map_err(|e| ErrorInfo {
+                        kind: ERR_ADB_COMMAND_FAILED.into(),
+                        message: format!("adb pull spawn failed: {e}"),
+                    })?;
+                let elapsed = t0.elapsed();
+                let transfer_finished_at_utc = transfer_timestamp_utc();
+                if !status.status.success() {
+                    return Err(ErrorInfo {
+                        kind: ERR_ADB_COMMAND_FAILED.into(),
+                        message: format!(
+                            "adb pull failed (size={} iter={i}): {}",
+                            spec.bytes,
+                            String::from_utf8_lossy(&status.stderr).trim()
+                        ),
+                    });
+                }
+                let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
+                let bytes_per_sec = if elapsed.as_secs_f64() > 0.0 {
+                    spec.bytes as f64 / elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
+                let result_index = all.len();
+                all.push(AdbIteration {
+                    device_serial: device.serial.clone(),
+                    device_model: device.model.clone(),
+                    hub_path: device.hub_path.clone(),
+                    size_bytes: spec.bytes,
+                    direction: "pull".into(),
+                    transfer_started_at_utc: Some(transfer_started_at_utc),
+                    transfer_finished_at_utc: Some(transfer_finished_at_utc),
+                    bytes_per_sec,
+                    elapsed_ms,
+                    // Updated after the contiguous pull loop completes.
+                    sha256_ok: true,
                 });
+                pulled_for_verification.push((result_index, local_pulled, *expected_hash));
             }
-            let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
-            let bytes_per_sec = if elapsed.as_secs_f64() > 0.0 {
-                spec.bytes as f64 / elapsed.as_secs_f64()
-            } else {
-                0.0
-            };
-            let result_index = all.len();
-            all.push(AdbIteration {
-                device_serial: device.serial.clone(),
-                device_model: device.model.clone(),
-                hub_path: device.hub_path.clone(),
-                size_bytes: spec.bytes,
-                direction: "pull".into(),
-                transfer_started_at_utc: Some(transfer_started_at_utc),
-                transfer_finished_at_utc: Some(transfer_finished_at_utc),
-                bytes_per_sec,
-                elapsed_ms,
-                // Updated after the contiguous pull loop completes.
-                sha256_ok: true,
-            });
-            pulled_for_verification.push((result_index, local_pulled, *expected_hash));
-        }
 
-        progress_inplace_done(tty);
-        progress_line(tty, &format!("adb: [{size_label}] verifying pulls"));
-        for (result_index, local_pulled, expected_hash) in pulled_for_verification {
-            all[result_index].sha256_ok = match sha256_file(&local_pulled) {
-                Ok(hash) => hash == expected_hash,
-                Err(_) => false,
-            };
-            let _ = fs::remove_file(local_pulled);
+            progress_inplace_done(tty);
+            progress_line(tty, &format!("adb: [{size_label}] verifying pulls"));
+            for (result_index, local_pulled, expected_hash) in pulled_for_verification {
+                all[result_index].sha256_ok = match sha256_file(&local_pulled) {
+                    Ok(hash) => hash == expected_hash,
+                    Err(_) => false,
+                };
+                let _ = fs::remove_file(local_pulled);
+            }
         }
 
         // Cleanup remote files for this size.
@@ -1007,5 +1012,49 @@ mod tests {
             value["transfer_finished_at_utc"],
             "2026-07-16T12:00:00.123789Z"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn push_only_records_no_pull_commands_or_results() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("fb-adb-push-only-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("commands.log");
+        let adb = dir.join("fake-adb");
+        fs::write(
+            &adb,
+            format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n", log.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&adb, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let device = Device {
+            serial: "device".into(),
+            model: "model".into(),
+            hub_path: None,
+        };
+        let results = run_iterations(
+            adb.to_str().unwrap(),
+            &device,
+            "/data/local/tmp/",
+            &[ResolvedSize {
+                bytes: 25,
+                iterations: 2,
+            }],
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|result| result.direction == "push"));
+        let commands = fs::read_to_string(&log).unwrap();
+        assert_eq!(commands.lines().filter(|line| line.contains(" push ")).count(), 2);
+        assert!(!commands.lines().any(|line| line.contains(" pull ")));
+        assert_eq!(commands.lines().filter(|line| line.contains(" sha256sum ")).count(), 2);
+        assert_eq!(commands.lines().filter(|line| line.contains(" rm -f ")).count(), 2);
+        let _ = fs::remove_dir_all(&dir);
     }
 }
