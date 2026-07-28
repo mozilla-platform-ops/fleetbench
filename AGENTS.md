@@ -32,18 +32,21 @@ not match `collector/Cargo.toml`.
    then verify the GitHub release is published with the expected platform
    binaries and `SHA256SUMS` (especially the Linux asset used by host-wide
    runners).
-7. Replace the workflow-generated release notes with a useful human summary.
-   Follow the recent-release format: `# Fleetbench vX.Y.Z`, short focused
-   `##` sections with outcome-oriented bullets, a `## Downloads` section, and
-   a final `**Full Changelog**` comparison link. For example:
+7. Draft replacement release notes, then present the exact Markdown to the
+   user for explicit approval before changing the published release. Follow
+   the recent-release format: `# Fleetbench vX.Y.Z`, short focused `##`
+   sections with outcome-oriented bullets, a `## Downloads` section, and a
+   final `**Full Changelog**` comparison link.
+
+   Keep the proposed notes specific to the release: explain user-visible
+   behavior, new launchers or compatibility modes, and the release version
+   callers should use. Do not leave only GitHub's generated commit list.
+8. Only after the user approves the exact draft, replace the
+   workflow-generated notes. For example:
 
    ```bash
    gh release edit vX.Y.Z --title vX.Y.Z --notes-file <prepared-notes.md>
    ```
-
-   Keep the notes specific to the release: explain user-visible behavior,
-   new launchers or compatibility modes, and the release version callers
-   should use. Do not leave only GitHub's generated commit list.
 
 ---
 
