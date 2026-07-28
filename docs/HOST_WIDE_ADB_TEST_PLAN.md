@@ -438,6 +438,38 @@ the sustained high-concurrency condition needed for a like-for-like
 reproduction. The planned push-only, long-running overlap launcher is the
 follow-up experiment.
 
+## Sparky-style long-running push-only overlap reproduction
+
+Use `scripts/host_wide_adb_test/run_sparky_push_only.sh` to make each selected
+device run **one** long-lived collector invocation. It uses `/sdcard/Download`,
+25-byte payloads, and `--direction push`; remote SHA-256 verification and
+cleanup happen only after the complete timed push loop. The default
+`FLEETBENCH_PUSH_ITERATIONS=5000` is deliberately long enough to outlast normal
+HyperExecute launch skew, while remaining configurable for a host's timeout
+budget. The script requires `FLEETBENCH_VERSION` so operators explicitly select
+a release that contains `--direction push`.
+
+Do not set `FLEETBENCH_RUNS` for this experiment: repeating whole collector
+invocations creates phase gaps and weakens overlap. Analyze the raw
+`transfer_started_at_utc`/`transfer_finished_at_utc` windows across the JSON
+artifacts to identify samples that actually overlapped; do not infer overlap
+from submission time.
+
+Example (substitute a release that includes push-only mode and the devices from
+one host):
+
+```bash
+FLEETBENCH_VERSION=vX.Y.Z FLEETBENCH_PUSH_ITERATIONS=5000 lt_run_cmd \
+  --script ~/git/fleetbench/scripts/host_wide_adb_test/run_sparky_push_only.sh \
+  --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
+  --artifact-path 'fleetbench-artifacts/**' \
+  --require-artifact-glob 'fleetbench-artifacts/*.json' \
+  --require-artifact-glob 'fleetbench-artifacts/*.log' \
+  --require-artifact-glob 'fleetbench-artifacts/manifest.txt' \
+  --label fleetbench-sparky-push-only-overlap \
+  --device <serial-1> --device <serial-2> --device <serial-3>
+```
+
 Run these from `~/git/mozilla-bitbar-devicepool` after `source lt_env.sh`.
 The scripts default to `v0.4.2`; `FLEETBENCH_VERSION=v0.4.2` is explicit here
 to make the rerun provenance unambiguous.
