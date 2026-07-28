@@ -43,14 +43,13 @@ headline result was LambdaTest push latency spanning **280 → 1600 ms**, while
 BitBar stayed within **280 → 470 ms**.
 
 `fleetbench adb --direction push --push-mode mozdevice --sizes 25B
---remote-path /sdcard/Download` is a controlled standalone approximation of
-that probe. It deliberately adds raw per-iteration output and deferred checksum
-verification, and its explicit subprocess sequence is not a substitute for
-running the historical Python client. Use
-`scripts/host_wide_adb_test/run_sparky_mozdevice_exact.sh` when validating the
-literal `mozdevice.ADBDevice.push()` behavior from the Try revision. The default
-`--push-mode direct` measures only one `adb push` and is not interchangeable
-with either historical mode.
+--remote-path /sdcard/Download` matches the successful external-storage command
+sequence of that probe: sync, remote `is_dir` check, push, first-call external
+storage discovery, and sync. It deliberately adds raw per-iteration output and
+deferred checksum verification; use
+`scripts/host_wide_adb_test/run_sparky_mozdevice_exact.sh` to validate against
+the literal Python client. The default `--push-mode direct` measures only one
+`adb push` and is not interchangeable with either historical mode.
 
 ## The signal: distribution, not mean
 

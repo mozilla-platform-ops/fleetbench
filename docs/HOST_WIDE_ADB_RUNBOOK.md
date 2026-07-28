@@ -54,7 +54,7 @@ before launching the next one.
 | Phase | Launcher | Purpose |
 |---|---|---|
 | bulk | `run_bulk.sh` | Mixed push/pull baseline over 25 B, 1 MiB, 10 MiB, and 100 MiB. |
-| latency push, 25 B | `run_push_only.sh` | Sustained direct-push contention. |
+| latency push, 25 B | `run_push_only.sh` | Sustained direct-push contention; set `FLEETBENCH_PUSH_MODE=mozdevice` for the mozdevice-compatible path. |
 | latency pull, 25 B | `run_pull_only.sh` | Sustained 25-byte pull contention. |
 | latency push, 50 KiB | `run_push_only.sh` | Sustained 50 KiB push contention. |
 | latency pull, 50 KiB | `run_pull_only.sh` | Sustained 50 KiB pull contention. |

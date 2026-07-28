@@ -506,6 +506,9 @@ fn run_iterations(
         message: format!("failed to create work dir: {e}"),
     })?;
     let _cleanup = WorkDir(work_dir.clone());
+    // ADBDevice caches its external-storage discovery after the first chmod
+    // attempt. Keep the equivalent state across all pushes in this invocation.
+    let mut mozdevice_state = MozdevicePushState::default();
 
     for spec in specs {
         let n = spec.iterations as usize;
@@ -587,7 +590,9 @@ fn run_iterations(
                 let t0 = Instant::now();
                 let push_result = match push_mode {
                     PushMode::Direct => direct_push(adb, &device.serial, path, &remote),
-                    PushMode::Mozdevice => mozdevice_push(adb, &device.serial, path, &remote),
+                    PushMode::Mozdevice => {
+                        mozdevice_push(adb, &device.serial, path, &remote, &mut mozdevice_state)
+                    }
                 };
                 let elapsed = t0.elapsed();
                 let transfer_finished_at_utc = transfer_timestamp_utc();
@@ -727,10 +732,21 @@ fn direct_push(adb: &str, serial: &str, local: &Path, remote: &str) -> Result<()
 /// Execute the successful-path sequence used by `mozdevice.ADBDevice.push`.
 ///
 /// The public mozdevice method calls `sync` before and after every push and
-/// its command wrapper prepends `wait-for-device`. On internal storage it also
-/// runs `chmod -R 777`; mozdevice intentionally skips chmod on external
-/// storage such as /sdcard/Download, the path used by Sparky's probe.
-fn mozdevice_push(adb: &str, serial: &str, local: &Path, remote: &str) -> Result<(), String> {
+/// its command wrapper prepends `wait-for-device`. It also checks whether the
+/// remote destination is a directory before each push. `chmod` first discovers
+/// external storage with `shell set`; it then skips chmod for /sdcard paths.
+#[derive(Default)]
+struct MozdevicePushState {
+    external_storage_discovered: bool,
+}
+
+fn mozdevice_push(
+    adb: &str,
+    serial: &str,
+    local: &Path,
+    remote: &str,
+    state: &mut MozdevicePushState,
+) -> Result<(), String> {
     let local = local
         .to_str()
         .ok_or_else(|| format!("local path is not valid UTF-8: {}", local.display()))?;
@@ -740,12 +756,33 @@ fn mozdevice_push(adb: &str, serial: &str, local: &Path, remote: &str) -> Result
         &["wait-for-device", "shell", "sync"],
         "pre-push sync",
     )?;
+    // ADBDevice.push() calls is_dir(remote) before issuing its push. The
+    // historical probe's generated filename does not exist, but the check is
+    // still part of its timed path.
+    let _remote_is_directory = run_adb_bool(
+        adb,
+        serial,
+        &["wait-for-device", "shell", "test", "-d", remote],
+        "remote directory check",
+    )?;
     run_adb_step(
         adb,
         serial,
         &["wait-for-device", "push", local, remote],
         "push",
     )?;
+    // mozdevice.chmod() populates its external-storage cache from `set` on
+    // first use, even when the path turns out to be /sdcard and chmod is
+    // skipped. This is a large part of the 25-byte historical probe.
+    if !state.external_storage_discovered {
+        run_adb_step(
+            adb,
+            serial,
+            &["wait-for-device", "shell", "set"],
+            "external-storage discovery",
+        )?;
+        state.external_storage_discovered = true;
+    }
     if !is_external_storage_path(remote) {
         run_adb_step(
             adb,
@@ -776,6 +813,17 @@ fn run_adb_step(adb: &str, serial: &str, args: &[&str], step: &str) -> Result<()
             String::from_utf8_lossy(&output.stderr).trim()
         ))
     }
+}
+
+/// Mirrors mozdevice.shell_bool(): a non-zero `test` result means false, not
+/// an ADB failure. Spawn failures still surface as failures.
+fn run_adb_bool(adb: &str, serial: &str, args: &[&str], step: &str) -> Result<bool, String> {
+    let output = Command::new(adb)
+        .args(["-s", serial])
+        .args(args)
+        .output()
+        .map_err(|e| format!("{step} spawn failed: {e}"))?;
+    Ok(output.status.success())
 }
 
 fn is_external_storage_path(path: &str) -> bool {
@@ -1178,7 +1226,10 @@ mod tests {
         let adb = dir.join("fake-adb");
         fs::write(
             &adb,
-            format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n", log.display()),
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \"$*\" in *' shell test -d '*) exit 1;; esac\n",
+                log.display()
+            ),
         )
         .unwrap();
         fs::set_permissions(&adb, fs::Permissions::from_mode(0o755)).unwrap();
@@ -1317,6 +1368,20 @@ mod tests {
                 .count(),
             4
         );
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|line| line.contains("wait-for-device shell test -d"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|line| line.contains("wait-for-device shell set"))
+                .count(),
+            1
+        );
         let pushes: Vec<_> = commands
             .iter()
             .filter(|line| line.contains("wait-for-device push"))
@@ -1326,6 +1391,11 @@ mod tests {
         let second_local = pushes[1].split_whitespace().nth(4).unwrap();
         assert_eq!(first_local, second_local);
         assert!(!commands.iter().any(|line| line.contains(" chmod ")));
+        assert!(commands[0].contains("wait-for-device shell sync"));
+        assert!(commands[1].contains("wait-for-device shell test -d"));
+        assert!(commands[2].contains("wait-for-device push"));
+        assert!(commands[3].contains("wait-for-device shell set"));
+        assert!(commands[4].contains("wait-for-device shell sync"));
         assert!(is_external_storage_path("/sdcard/Download/file"));
         assert!(!is_external_storage_path("/data/local/tmp/file"));
         let _ = fs::remove_dir_all(&dir);
