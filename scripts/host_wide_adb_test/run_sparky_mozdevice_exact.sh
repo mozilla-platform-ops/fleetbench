@@ -7,6 +7,9 @@
 set -euo pipefail
 
 : "${DEVICE_SERIAL:?lt_run_cmd did not export DEVICE_SERIAL}"
+case "$DEVICE_SERIAL" in
+  *:*) echo "DEVICE_SERIAL must be a bare USB serial, got TCP transport $DEVICE_SERIAL" >&2; exit 2 ;;
+esac
 
 ITERATIONS="${FLEETBENCH_ADB_LATENCY_ITERATIONS:-200}"
 REMOTE_DIR="${FLEETBENCH_ADB_LATENCY_REMOTE_DIR:-/sdcard/Download}"
@@ -37,7 +40,7 @@ mkdir -p "$ARTIFACT_DIR" "$WORK_DIR/mozdevice/mozdevice"
 # Fetch the exact mozdevice source Raptor used in Sparky's Try revision. The
 # only third-party runtime dependency is mozlog; it does not implement ADB.
 MOZDEVICE_URL="https://hg-edge.mozilla.org/try/raw-file/${TRY_REVISION}/testing/mozbase/mozdevice/mozdevice"
-for module in __init__.py adb.py version_codes.py; do
+for module in __init__.py adb.py adb_android.py remote_process_monitor.py version_codes.py; do
   curl --fail --location --retry 3 --output "$WORK_DIR/mozdevice/mozdevice/$module" \
     "$MOZDEVICE_URL/$module"
 done
