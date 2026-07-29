@@ -51,6 +51,14 @@ deferred checksum verification; use
 the literal Python client. The default `--push-mode direct` measures only one
 `adb push` and is not interchangeable with either historical mode.
 
+For a local comparison of the literal Python client and Fleetbench, use
+`scripts/host_wide_adb_test/run_local_mozdevice_interleave.sh`. It runs an
+even number of alternating Python/Fleetbench blocks (four 50-sample blocks per
+implementation by default), preserves each raw block, and writes an aggregate
+`summary.json`. This controls run order better than one complete Python run
+followed by one complete Fleetbench run; it is still a single-device experiment,
+not a shared-host contention measurement.
+
 ## The signal: distribution, not mean
 
 The headline finding from the reference run:
