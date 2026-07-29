@@ -9,17 +9,37 @@ copy/paste-ready launch command.
 
 | Date | Host | Phase | Version | Outcome | Notes |
 |---|---|---|---|---|---|
+| Pending release | `.55` (`test-1`) | Eight-device 25 B `mozdevice` push validation | Next release | Planned | Direct Fleetbench analogue of Sparky's probe; require bare USB serials and sustained overlap before interpreting the distribution. |
+| Pending release | `.55` (`test-1`) | Directional saturation suite | Next release | Planned | All eight devices; sustained 25 B and 50 KiB push, then pull. Run only after the `mozdevice` validation is clean. |
 | 2026-07-29 | Local Pixel 10 Pro | Interleaved Python vs Fleetbench `mozdevice` | `b7f629b` + `67c3e78` diagnostics | Near parity | Four alternating 50-sample blocks per implementation (200 each): Fleetbench mean was 1.7% lower, and phase timings matched. |
 | 2026-07-28 | `.55` (`test-1`) | Literal Sparky `mozdevice` probe | Try `7757fb…` | Baseline reproduced | Eight bare USB serials / 1,600 raw replicates: 292.01 ms median, 332.39 ms p95, 393.68 ms maximum. This recovered Sparky's ~280 ms baseline, but not the historical LambdaTest tail. |
 | 2026-07-28 | Local Pixel 10 Pro | Python vs Fleetbench `mozdevice` | `b7f629b` | Tail parity | Sequential 200-sample probes; Fleetbench p95/p99 matched the literal Python client within 2%/3%, while its median was 16% lower. |
 | 2026-07-27 | `.55` (`test-1`) | Corrected bulk rerun | `v0.4.2` | Performance fail | All eight USB serials were selected and full overlap occurred, but 100 MiB push/pull missed the throughput and p95 targets. |
 | 2026-07-27 | `.55` (`test-1`) | Corrected latency rerun | `v0.4.2` | Pass, limited contention claim | All-sample latency passed; short transfers reached at most four peer devices. |
-| Next | `.55`, then `.47` | Bulk, long push, long pull | `v0.4.3` | Planned | Follow the runbook; long-running directional phases are intended to overcome launch skew. |
 
 The `.47` hub host is a mixed `a55-perf`/`stab` experiment. Compare it with
 `.55` only as an external reference, not as a controlled before/after result.
 
 ## Results
+
+### Pending release — `.55` host-wide follow-ups
+
+The local interleaved test provides command-path fidelity evidence only. After
+the next release includes that path, run these two tests in order on `.55`
+(`test-1`):
+
+1. **Eight-device 25 B `mozdevice` push validation.** Run the directional
+   push launcher with `FLEETBENCH_PUSH_MODE=mozdevice` against all eight bare
+   USB serials. Use sustained iterations so the timed transfer windows overlap.
+   Compare the resulting distribution with the `.55` literal-Python baseline;
+   do not make a host-wide conclusion if a device selects TCP or overlap is
+   absent.
+2. **Directional saturation suite.** Only after the validation is clean, run
+   all eight devices through sustained 25 B and 50 KiB push, then the same two
+   sizes for pull. Analyze each direction and size by observed peer overlap.
+
+`.47` remains an optional post-hub reference after `.55`; its mixed device set
+does not make it a controlled counterpart for either pending test.
 
 ### 2026-07-29 — interleaved local `mozdevice` fidelity check
 
