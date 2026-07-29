@@ -59,6 +59,15 @@ controlled performance comparison: the probes were sequential and the Python
 client's verbose logging and local runtime behavior remain inside its timing
 boundary.
 
+The remaining central-tendency difference is expected. Fleetbench reproduces
+the ADB command sequence, but the literal client also times Python's
+`subprocess`/polling implementation, temporary-file path handling, and verbose
+`mozlog` work after each ADB command. Fleetbench uses Rust process handling and
+its own random payload and remote filenames instead. In addition, the Python
+probe ran first, so device/host state could have changed before Fleetbench ran.
+Neither result isolates those host-side costs; a deliberately alternating,
+repeated comparison would be needed to attribute the 16% median gap.
+
 ### 2026-07-27 — `.55` corrected-timing reruns (`v0.4.2`)
 
 `v0.4.1` performed checksum verification between timed transfers. `v0.4.2`
