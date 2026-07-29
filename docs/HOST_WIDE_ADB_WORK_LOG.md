@@ -9,6 +9,8 @@ copy/paste-ready launch command.
 
 | Date | Host | Phase | Version | Outcome | Notes |
 |---|---|---|---|---|---|
+| 2026-07-28 | `.55` (`test-1`) | Literal Sparky `mozdevice` probe | Try `7757fb…` | Baseline reproduced | Eight bare USB serials / 1,600 raw replicates: 292.01 ms median, 332.39 ms p95, 393.68 ms maximum. This recovered Sparky's ~280 ms baseline, but not the historical LambdaTest tail. |
+| 2026-07-28 | Local Pixel 10 Pro | Python vs Fleetbench `mozdevice` | `b7f629b` | Tail parity | Sequential 200-sample probes; Fleetbench p95/p99 matched the literal Python client within 2%/3%, while its median was 16% lower. |
 | 2026-07-27 | `.55` (`test-1`) | Corrected bulk rerun | `v0.4.2` | Performance fail | All eight USB serials were selected and full overlap occurred, but 100 MiB push/pull missed the throughput and p95 targets. |
 | 2026-07-27 | `.55` (`test-1`) | Corrected latency rerun | `v0.4.2` | Pass, limited contention claim | All-sample latency passed; short transfers reached at most four peer devices. |
 | Next | `.55`, then `.47` | Bulk, long push, long pull | `v0.4.3` | Planned | Follow the runbook; long-running directional phases are intended to overcome launch skew. |
@@ -17,6 +19,45 @@ The `.47` hub host is a mixed `a55-perf`/`stab` experiment. Compare it with
 `.55` only as an external reference, not as a controlled before/after result.
 
 ## Results
+
+### 2026-07-28 — literal `mozdevice` validation
+
+The earlier `mozdevice`-mode Fleetbench result was too low because it omitted
+parts of `ADBDevice.push()`. A dedicated runner fetched the `mozdevice` source
+from Sparky's Try revision `7757fbcccc8eb83105af2b9518517f47dcca9eff` and ran
+the original 25-byte, 200-iteration Python loop against every selected `.55`
+phone. All eight jobs used bare USB serials and emitted the expected Perfherder
+replicate artifacts.
+
+| Scope | Samples | Mean | Median | p95 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|---:|
+| `.55` literal Python `mozdevice` | 1,600 | — | 292.01 ms | 332.39 ms | 347.42 ms | 393.68 ms |
+
+This reproduces Sparky's approximate 280 ms baseline and tight BitBar-like
+distribution; it does not reproduce the historical LambdaTest tail to 1,600
+ms. The literal Perfherder output has no per-transfer timestamps, so it cannot
+establish actual eight-way transfer overlap after each job's independent Python
+dependency setup.
+
+#### Local Pixel 10 Pro comparison
+
+After Fleetbench was updated to time the same external-storage command path
+(`sync → test -d → push → first-call storage discovery → sync`), a local,
+sequential 200-sample comparison was run on the attached Pixel 10 Pro. The
+Python run was completed first, including its deferred cleanup, then Fleetbench
+ran with `--direction push --push-mode mozdevice` against the same 25-byte
+`/sdcard/Download` workload.
+
+| Implementation | Samples | Mean | Median | p95 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|---:|
+| Literal Python `mozdevice` | 200 | 474.06 ms | 497.56 ms | 592.11 ms | 606.51 ms | 943.24 ms |
+| Fleetbench Rust `mozdevice` (`b7f629b`) | 200 | 408.60 ms | 415.68 ms | 580.66 ms | 621.53 ms | 658.20 ms |
+
+Fleetbench was 16% lower at the median, but p95 and p99 were within 2% and 3%
+of the literal client. Treat this as command-path fidelity evidence, not a
+controlled performance comparison: the probes were sequential and the Python
+client's verbose logging and local runtime behavior remain inside its timing
+boundary.
 
 ### 2026-07-27 — `.55` corrected-timing reruns (`v0.4.2`)
 
