@@ -9,6 +9,7 @@ copy/paste-ready launch command.
 
 | Date | Host | Phase | Version | Outcome | Notes |
 |---|---|---|---|---|---|
+| 2026-07-29 | Local Pixel 10 Pro | Interleaved Python vs Fleetbench `mozdevice` | `b7f629b` + `67c3e78` diagnostics | Near parity | Four alternating 50-sample blocks per implementation (200 each): Fleetbench mean was 1.7% lower, and phase timings matched. |
 | 2026-07-28 | `.55` (`test-1`) | Literal Sparky `mozdevice` probe | Try `7757fb…` | Baseline reproduced | Eight bare USB serials / 1,600 raw replicates: 292.01 ms median, 332.39 ms p95, 393.68 ms maximum. This recovered Sparky's ~280 ms baseline, but not the historical LambdaTest tail. |
 | 2026-07-28 | Local Pixel 10 Pro | Python vs Fleetbench `mozdevice` | `b7f629b` | Tail parity | Sequential 200-sample probes; Fleetbench p95/p99 matched the literal Python client within 2%/3%, while its median was 16% lower. |
 | 2026-07-27 | `.55` (`test-1`) | Corrected bulk rerun | `v0.4.2` | Performance fail | All eight USB serials were selected and full overlap occurred, but 100 MiB push/pull missed the throughput and p95 targets. |
@@ -19,6 +20,35 @@ The `.47` hub host is a mixed `a55-perf`/`stab` experiment. Compare it with
 `.55` only as an external reference, not as a controlled before/after result.
 
 ## Results
+
+### 2026-07-29 — interleaved local `mozdevice` fidelity check
+
+The sequential local comparison left a 16% median difference, so the literal
+Python probe and Fleetbench were alternated in four 50-sample blocks each on
+the same attached Pixel 10 Pro. Odd rounds ran Python then Fleetbench; even
+rounds reversed that order. The final run also captured before/after device and
+host state for every block and per-subprocess timings for the `mozdevice`
+sequence.
+
+| Implementation | Samples | Mean | Median | p95 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|---:|
+| Literal Python `mozdevice` | 200 | 552.50 ms | 563.08 ms | 675.06 ms | 730.23 ms | 740.38 ms |
+| Fleetbench Rust `mozdevice` | 200 | 543.05 ms | 552.89 ms | 662.88 ms | 744.07 ms | 776.13 ms |
+
+Fleetbench's mean was 9.45 ms (1.7%) lower. Its p95 was 12.18 ms lower and
+its p99 was 13.84 ms higher; the distributions therefore overlap closely. The
+diagnostic phase timings also matched: each implementation spent roughly
+155–177 ms in pre-push sync, 108–117 ms in the remote-directory check,
+91–108 ms in `push`, and 157–175 ms in post-push sync. The first-call external
+storage discovery occurred once per block and is not material to the 200-sample
+comparison.
+
+The phone remained AC-powered at 100% charge with thermal status 0 and a
+30.6–30.9 °C battery reading. Host load varied during the experiment, but no
+implementation-specific phase divergence appeared. This is strong evidence
+that Fleetbench now matches the literal Python `mozdevice` command path and
+timing envelope on this phone. It is not evidence about `.55` shared-host
+contention or the historical LambdaTest tail.
 
 ### 2026-07-28 — literal `mozdevice` validation
 
