@@ -57,7 +57,16 @@ even number of alternating Python/Fleetbench blocks (four 50-sample blocks per
 implementation by default), preserves each raw block, and writes an aggregate
 `summary.json`. This controls run order better than one complete Python run
 followed by one complete Fleetbench run; it is still a single-device experiment,
-not a shared-host contention measurement.
+not a shared-host contention measurement. Each block also records
+`state-before.txt` and `state-after.txt` (ADB state, battery/thermal service,
+and available host power state). The literal Python block writes opt-in
+`mozdevice-phase-timings.json`; Fleetbench's matching phase timings appear in
+each `adb_results.iterations[].mozdevice_phase_timings`. In both cases,
+`elapsed_ms` remains the complete `ADBDevice.push()`-compatible timing; phase
+timings are diagnostic only.
+
+The exact upstream implementation used for this comparison is vendored at
+[`scripts/host_wide_adb_test/reference/mozdevice-adb-7757fbcccc8eb83105af2b9518517f47dcca9eff.py`](../scripts/host_wide_adb_test/reference/mozdevice-adb-7757fbcccc8eb83105af2b9518517f47dcca9eff.py).
 
 ## The signal: distribution, not mean
 

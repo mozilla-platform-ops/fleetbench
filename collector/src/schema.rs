@@ -203,7 +203,19 @@ pub struct AdbIteration {
     pub transfer_finished_at_utc: Option<String>,
     pub bytes_per_sec: f64,
     pub elapsed_ms: f64,
+    /// Per-command timings for the `mozdevice` compatibility sequence. Omitted
+    /// for direct pushes and pulls, where the one outer timing is sufficient.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mozdevice_phase_timings: Option<Vec<AdbCommandTiming>>,
     pub sha256_ok: bool,
+}
+
+/// One subprocess in a mozdevice-compatible push. These timings are
+/// diagnostic: `AdbIteration.elapsed_ms` remains the comparable outer timing.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdbCommandTiming {
+    pub phase: String,
+    pub elapsed_ms: f64,
 }
 
 #[cfg(test)]
@@ -314,12 +326,21 @@ mod tests {
         let v: serde_json::Value = serde_json::to_value(&out).unwrap();
         assert_eq!(v["schema_version"], 6);
         assert!(v["collector_git_sha"].is_string());
-        assert!(v.get("frequency_series").is_none(), "frequency_series must be omitted when unset");
+        assert!(
+            v.get("frequency_series").is_none(),
+            "frequency_series must be omitted when unset"
+        );
         assert_eq!(v["cpu_suite_version"], "cpu-v0");
         assert_eq!(v["status"], "ok");
         assert!(v.get("error").is_none(), "error must be omitted on success");
-        assert_eq!(v["environment"]["load_pre_warmup"]["cpu_counters"]["kind"], "linux_proc_stat");
-        assert_eq!(v["environment"]["load_pre_warmup"]["cpu_counters"]["idle_units"], 1_000_000);
+        assert_eq!(
+            v["environment"]["load_pre_warmup"]["cpu_counters"]["kind"],
+            "linux_proc_stat"
+        );
+        assert_eq!(
+            v["environment"]["load_pre_warmup"]["cpu_counters"]["idle_units"],
+            1_000_000
+        );
         assert_eq!(v["results"]["prime_sieve_mt"]["threads"], 32);
     }
 

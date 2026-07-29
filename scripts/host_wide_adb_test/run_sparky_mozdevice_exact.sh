@@ -57,6 +57,7 @@ done
   echo "payload_bytes=25"
   echo "iterations=$ITERATIONS"
   echo "timing=time.perf_counter around ADBDevice.push"
+  echo "phase_timings=${FLEETBENCH_MOZDEVICE_PHASE_TIMINGS_PATH:+enabled}"
   echo "cleanup=deferred until after timed loop"
   date -u +"started_at_utc=%Y-%m-%dT%H:%M:%SZ"
 } > "$ARTIFACT_DIR/manifest.txt"
@@ -75,11 +76,59 @@ def main():
     iterations = int(os.environ["FLEETBENCH_ADB_LATENCY_ITERATIONS"])
     remote_dir = os.environ["FLEETBENCH_ADB_LATENCY_REMOTE_DIR"].rstrip("/")
     output_path = sys.argv[1]
+    phase_timings_path = os.environ.get("FLEETBENCH_MOZDEVICE_PHASE_TIMINGS_PATH")
 
     # This is the same factory call Raptor's _initialize_device() made before
     # Sparky's run_adb_latency_test(), with ANDROID_SERIAL selecting the
     # lt_run_cmd-assigned device.
     device = ADBDeviceFactory(verbose=True)
+    active_phase_timings = None
+    diagnostic_iterations = []
+
+    def record_phase(method, command):
+        if method == "command_output":
+            if command == ["shell", "sync"]:
+                return (
+                    "pre_push_sync"
+                    if not any(p["phase"] == "pre_push_sync" for p in active_phase_timings)
+                    else "post_push_sync"
+                )
+            if command and command[0] == "push":
+                return "push"
+        elif method == "shell_bool" and command.startswith("test -d "):
+            return "remote_directory_check"
+        elif method == "shell_output":
+            if command == "sync":
+                return (
+                    "pre_push_sync"
+                    if not any(p["phase"] == "pre_push_sync" for p in active_phase_timings)
+                    else "post_push_sync"
+                )
+            if command == "set":
+                return "external_storage_discovery"
+        return None
+
+    def wrap_adb_method(method_name):
+        original = getattr(device, method_name)
+
+        def wrapped(*args, **kwargs):
+            command = args[0] if args else kwargs.get("cmds", kwargs.get("cmd", ""))
+            started = time.perf_counter()
+            try:
+                return original(*args, **kwargs)
+            finally:
+                if active_phase_timings is not None:
+                    phase = record_phase(method_name, command)
+                    if phase:
+                        active_phase_timings.append(
+                            {"phase": phase, "elapsed_ms": (time.perf_counter() - started) * 1000.0}
+                        )
+
+        setattr(device, method_name, wrapped)
+
+    if phase_timings_path:
+        for method_name in ("command_output", "shell_bool", "shell_output"):
+            wrap_adb_method(method_name)
     local_file = None
     pushed_remote_paths = []
     replicates = []
@@ -91,9 +140,16 @@ def main():
         run_id = int(time.time())
         for i in range(iterations):
             remote_path = "%s/adb-latency-%d-%d.txt" % (remote_dir, run_id, i)
+            if phase_timings_path:
+                active_phase_timings = []
             start = time.perf_counter()
             device.push(local_file, remote_path)
             elapsed_ms = (time.perf_counter() - start) * 1000.0
+            if phase_timings_path:
+                diagnostic_iterations.append(
+                    {"iteration": i, "elapsed_ms": elapsed_ms, "phases": active_phase_timings}
+                )
+                active_phase_timings = None
             replicates.append(elapsed_ms)
             pushed_remote_paths.append(remote_path)
     finally:
@@ -138,6 +194,17 @@ def main():
     print("PERFHERDER_DATA: %s" % json.dumps(perfherder_data))
     with open(output_path, "w") as output:
         json.dump(perfherder_data, output, indent=2, sort_keys=True)
+    if phase_timings_path:
+        with open(phase_timings_path, "w") as output:
+            json.dump(
+                {
+                    "timing": "time.perf_counter around each mozdevice subprocess",
+                    "iterations": diagnostic_iterations,
+                },
+                output,
+                indent=2,
+                sort_keys=True,
+            )
 
 
 if __name__ == "__main__":
@@ -146,10 +213,12 @@ PYTHON
 
 json="$ARTIFACT_DIR/sparky-adb-latency-perfherder.json"
 log="$ARTIFACT_DIR/sparky-adb-latency.log"
+phase_timings="${FLEETBENCH_MOZDEVICE_PHASE_TIMINGS_PATH:-}"
 echo "Exact Sparky mozdevice run: serial=$DEVICE_SERIAL iterations=$ITERATIONS"
 if ! ANDROID_SERIAL="$DEVICE_SERIAL" \
   FLEETBENCH_ADB_LATENCY_ITERATIONS="$ITERATIONS" \
   FLEETBENCH_ADB_LATENCY_REMOTE_DIR="$REMOTE_DIR" \
+  FLEETBENCH_MOZDEVICE_PHASE_TIMINGS_PATH="$phase_timings" \
   PYTHONPATH="$WORK_DIR/mozdevice" \
   "$WORK_DIR/venv/bin/python" "$WORK_DIR/run_probe.py" "$json" >"$log" 2>&1; then
   echo "Exact Sparky mozdevice run failed; preserving $log" >&2

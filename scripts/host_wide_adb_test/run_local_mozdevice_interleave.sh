@@ -58,16 +58,48 @@ mkdir -p "$ARTIFACT_DIR"
   date -u +"started_at_utc=%Y-%m-%dT%H:%M:%SZ"
 } > "$ARTIFACT_DIR/manifest.txt"
 
+capture_command() {
+  local label="$1"
+  shift
+  printf '\n## %s\n' "$label"
+  "$@" 2>&1 || printf '[unavailable: exit %s]\n' "$?"
+}
+
+capture_block_state() {
+  local round="$1"
+  local implementation="$2"
+  local point="$3"
+  local output_dir="$4"
+  {
+    date -u +"captured_at_utc=%Y-%m-%dT%H:%M:%SZ"
+    echo "round=$round"
+    echo "implementation=$implementation"
+    echo "point=$point"
+    capture_command "adb get-state" adb -s "$DEVICE_SERIAL" get-state
+    capture_command "device properties" adb -s "$DEVICE_SERIAL" shell getprop ro.build.fingerprint
+    capture_command "device battery" adb -s "$DEVICE_SERIAL" shell dumpsys battery
+    capture_command "device thermal service" adb -s "$DEVICE_SERIAL" shell dumpsys thermalservice
+    capture_command "host uptime" uptime
+    if command -v pmset >/dev/null; then
+      capture_command "host power" pmset -g batt
+      capture_command "host thermal settings" pmset -g therm
+    fi
+  } > "$output_dir/state-${point}.txt"
+}
+
 run_python() {
   local round="$1"
   local output_dir="$ARTIFACT_DIR/round-${round}-python"
   mkdir -p "$output_dir"
   echo "round $round: literal Python mozdevice ($ITERATIONS iterations)"
+  capture_block_state "$round" python before "$output_dir"
   DEVICE_SERIAL="$DEVICE_SERIAL" \
     FLEETBENCH_ADB_LATENCY_ITERATIONS="$ITERATIONS" \
     FLEETBENCH_ADB_LATENCY_REMOTE_DIR=/sdcard/Download \
     FLEETBENCH_ARTIFACT_DIR="$output_dir" \
+    FLEETBENCH_MOZDEVICE_PHASE_TIMINGS_PATH="$output_dir/mozdevice-phase-timings.json" \
     "$SPARKY_RUNNER" >"$output_dir/launcher.stdout" 2>"$output_dir/launcher.stderr"
+  capture_block_state "$round" python after "$output_dir"
 }
 
 run_fleetbench() {
@@ -75,6 +107,7 @@ run_fleetbench() {
   local output_dir="$ARTIFACT_DIR/round-${round}-fleetbench"
   mkdir -p "$output_dir"
   echo "round $round: Fleetbench Rust mozdevice ($ITERATIONS iterations)"
+  capture_block_state "$round" fleetbench before "$output_dir"
   (
     cd "$COLLECTOR_DIR"
     cargo run --quiet -- adb \
@@ -86,6 +119,7 @@ run_fleetbench() {
       --iterations "25B=$ITERATIONS" \
       --json
   ) >"$output_dir/fleetbench.json" 2>"$output_dir/fleetbench.log"
+  capture_block_state "$round" fleetbench after "$output_dir"
 }
 
 for ((round = 1; round <= ROUNDS; round++)); do

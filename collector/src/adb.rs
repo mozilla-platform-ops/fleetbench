@@ -19,9 +19,9 @@ use sysinfo::System;
 use crate::env::sample_load;
 use crate::inspect::{collect_cpu, collect_host, current_timestamp_utc};
 use crate::schema::{
-    AdbConfig, AdbEnv, AdbIteration, AdbResults, AdbSizeSpec, CpuInfo, Environment, ErrorInfo,
-    HostInfo, Output, Status, ADB_SUITE_VERSION, COLLECTOR_GIT_SHA, COLLECTOR_VERSION,
-    CPU_SUITE_VERSION, SCHEMA_VERSION,
+    AdbCommandTiming, AdbConfig, AdbEnv, AdbIteration, AdbResults, AdbSizeSpec, CpuInfo,
+    Environment, ErrorInfo, HostInfo, Output, Status, ADB_SUITE_VERSION, COLLECTOR_GIT_SHA,
+    COLLECTOR_VERSION, CPU_SUITE_VERSION, SCHEMA_VERSION,
 };
 
 const EXIT_OK: i32 = 0;
@@ -570,7 +570,7 @@ fn run_iterations(
                             String::from_utf8_lossy(&status.stderr).trim()
                         ),
                     });
-                }
+                };
             }
         }
 
@@ -589,22 +589,28 @@ fn run_iterations(
                 let transfer_started_at_utc = transfer_timestamp_utc();
                 let t0 = Instant::now();
                 let push_result = match push_mode {
-                    PushMode::Direct => direct_push(adb, &device.serial, path, &remote),
+                    PushMode::Direct => {
+                        direct_push(adb, &device.serial, path, &remote).map(|_| None)
+                    }
                     PushMode::Mozdevice => {
                         mozdevice_push(adb, &device.serial, path, &remote, &mut mozdevice_state)
+                            .map(Some)
                     }
                 };
                 let elapsed = t0.elapsed();
                 let transfer_finished_at_utc = transfer_timestamp_utc();
-                if let Err(message) = push_result {
-                    return Err(ErrorInfo {
-                        kind: ERR_ADB_COMMAND_FAILED.into(),
-                        message: format!(
-                            "adb push failed (size={} iter={i}): {message}",
-                            spec.bytes
-                        ),
-                    });
-                }
+                let mozdevice_phase_timings = match push_result {
+                    Ok(timings) => timings,
+                    Err(message) => {
+                        return Err(ErrorInfo {
+                            kind: ERR_ADB_COMMAND_FAILED.into(),
+                            message: format!(
+                                "adb push failed (size={} iter={i}): {message}",
+                                spec.bytes
+                            ),
+                        })
+                    }
+                };
                 let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
                 let bytes_per_sec = if elapsed.as_secs_f64() > 0.0 {
                     spec.bytes as f64 / elapsed.as_secs_f64()
@@ -622,6 +628,7 @@ fn run_iterations(
                     transfer_finished_at_utc: Some(transfer_finished_at_utc),
                     bytes_per_sec,
                     elapsed_ms,
+                    mozdevice_phase_timings,
                     // Updated after the contiguous push loop completes.
                     sha256_ok: true,
                 });
@@ -691,6 +698,7 @@ fn run_iterations(
                     transfer_finished_at_utc: Some(transfer_finished_at_utc),
                     bytes_per_sec,
                     elapsed_ms,
+                    mozdevice_phase_timings: None,
                     // Updated after the contiguous pull loop completes.
                     sha256_ok: true,
                 });
@@ -746,57 +754,97 @@ fn mozdevice_push(
     local: &Path,
     remote: &str,
     state: &mut MozdevicePushState,
-) -> Result<(), String> {
+) -> Result<Vec<AdbCommandTiming>, String> {
     let local = local
         .to_str()
         .ok_or_else(|| format!("local path is not valid UTF-8: {}", local.display()))?;
-    run_adb_step(
+    let mut timings = Vec::with_capacity(5);
+    run_timed_adb_step(
         adb,
         serial,
         &["wait-for-device", "shell", "sync"],
-        "pre-push sync",
+        "pre_push_sync",
+        &mut timings,
     )?;
     // ADBDevice.push() calls is_dir(remote) before issuing its push. The
     // historical probe's generated filename does not exist, but the check is
     // still part of its timed path.
-    let _remote_is_directory = run_adb_bool(
+    let _remote_is_directory = run_timed_adb_bool(
         adb,
         serial,
         &["wait-for-device", "shell", "test", "-d", remote],
-        "remote directory check",
+        "remote_directory_check",
+        &mut timings,
     )?;
-    run_adb_step(
+    run_timed_adb_step(
         adb,
         serial,
         &["wait-for-device", "push", local, remote],
         "push",
+        &mut timings,
     )?;
     // mozdevice.chmod() populates its external-storage cache from `set` on
     // first use, even when the path turns out to be /sdcard and chmod is
     // skipped. This is a large part of the 25-byte historical probe.
     if !state.external_storage_discovered {
-        run_adb_step(
+        run_timed_adb_step(
             adb,
             serial,
             &["wait-for-device", "shell", "set"],
-            "external-storage discovery",
+            "external_storage_discovery",
+            &mut timings,
         )?;
         state.external_storage_discovered = true;
     }
     if !is_external_storage_path(remote) {
-        run_adb_step(
+        run_timed_adb_step(
             adb,
             serial,
             &["wait-for-device", "shell", "chmod", "-R", "777", remote],
-            "post-push chmod",
+            "post_push_chmod",
+            &mut timings,
         )?;
     }
-    run_adb_step(
+    run_timed_adb_step(
         adb,
         serial,
         &["wait-for-device", "shell", "sync"],
-        "post-push sync",
-    )
+        "post_push_sync",
+        &mut timings,
+    )?;
+    Ok(timings)
+}
+
+fn run_timed_adb_step(
+    adb: &str,
+    serial: &str,
+    args: &[&str],
+    phase: &str,
+    timings: &mut Vec<AdbCommandTiming>,
+) -> Result<(), String> {
+    let started = Instant::now();
+    let result = run_adb_step(adb, serial, args, phase);
+    timings.push(AdbCommandTiming {
+        phase: phase.into(),
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+    });
+    result
+}
+
+fn run_timed_adb_bool(
+    adb: &str,
+    serial: &str,
+    args: &[&str],
+    phase: &str,
+    timings: &mut Vec<AdbCommandTiming>,
+) -> Result<bool, String> {
+    let started = Instant::now();
+    let result = run_adb_bool(adb, serial, args, phase);
+    timings.push(AdbCommandTiming {
+        phase: phase.into(),
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+    });
+    result
 }
 
 fn run_adb_step(adb: &str, serial: &str, args: &[&str], step: &str) -> Result<(), String> {
@@ -1201,6 +1249,7 @@ mod tests {
             transfer_finished_at_utc: Some("2026-07-16T12:00:00.123789Z".into()),
             bytes_per_sec: 1.0,
             elapsed_ms: 1.0,
+            mozdevice_phase_timings: None,
             sha256_ok: true,
         };
         let value = serde_json::to_value(iteration).unwrap();
@@ -1356,6 +1405,37 @@ mod tests {
         .unwrap();
 
         assert_eq!(results.len(), 2);
+        assert_eq!(
+            results[0]
+                .mozdevice_phase_timings
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|timing| timing.phase.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "pre_push_sync",
+                "remote_directory_check",
+                "push",
+                "external_storage_discovery",
+                "post_push_sync",
+            ]
+        );
+        assert_eq!(
+            results[1]
+                .mozdevice_phase_timings
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|timing| timing.phase.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "pre_push_sync",
+                "remote_directory_check",
+                "push",
+                "post_push_sync",
+            ]
+        );
         let commands: Vec<_> = fs::read_to_string(&log)
             .unwrap()
             .lines()
