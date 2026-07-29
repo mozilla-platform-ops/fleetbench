@@ -157,4 +157,5 @@ if ! ANDROID_SERIAL="$DEVICE_SERIAL" \
 fi
 
 date -u +"finished_at_utc=%Y-%m-%dT%H:%M:%SZ" >> "$ARTIFACT_DIR/manifest.txt"
-find "$ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort
+# BSD find (the macOS default) does not support GNU find's -printf.
+find "$ARTIFACT_DIR" -maxdepth 1 -type f -exec basename {} \; | sort
