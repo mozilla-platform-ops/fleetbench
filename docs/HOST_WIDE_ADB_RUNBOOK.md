@@ -74,7 +74,7 @@ From `~/git/mozilla-bitbar-devicepool`:
 source lt_env.sh
 
 lt_run_cmd \
-  --env FLEETBENCH_VERSION=v0.4.5 \
+  --env FLEETBENCH_VERSION=v0.4.6 \
   --env FLEETBENCH_TRANSFER_SIZE=25B \
   --script ~/git/fleetbench/scripts/host_wide_adb_test/<launcher> \
   --parallel 8 --start-delay 0 --timeout 2700 --queue-timeout 900 --retries 0 \
@@ -82,7 +82,7 @@ lt_run_cmd \
   --require-artifact-glob 'fleetbench-artifacts/**/*.json' \
   --require-artifact-glob 'fleetbench-artifacts/**/*.log' \
   --require-artifact-glob 'fleetbench-artifacts/manifest.txt' \
-  --label fleetbench-usb-<host>-<phase>-v0.4.5 \
+  --label fleetbench-usb-<host>-<phase>-v0.4.6 \
   --device <serial-1> --device <serial-2> --device <serial-3> \
   --device <serial-4> --device <serial-5> --device <serial-6> \
   --device <serial-7> --device <serial-8>

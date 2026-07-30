@@ -8,7 +8,7 @@ set -euo pipefail
 
 : "${DEVICE_SERIAL:?lt_run_cmd did not export DEVICE_SERIAL}"
 
-VERSION="${FLEETBENCH_VERSION:-v0.4.5}"
+VERSION="${FLEETBENCH_VERSION:-v0.4.6}"
 RUNS="${FLEETBENCH_RUNS:-3}"
 ASSET="fleetbench-${VERSION}-linux-x86_64"
 BASE_URL="https://github.com/mozilla-platform-ops/fleetbench/releases/download/${VERSION}"
