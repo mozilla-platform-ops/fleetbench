@@ -740,9 +740,11 @@ fn direct_push(adb: &str, serial: &str, local: &Path, remote: &str) -> Result<()
 /// Execute the successful-path sequence used by `mozdevice.ADBDevice.push`.
 ///
 /// The public mozdevice method calls `sync` before and after every push and
-/// its command wrapper prepends `wait-for-device`. It also checks whether the
-/// remote destination is a directory before each push. `chmod` first discovers
-/// external storage with `shell set`; it then skips chmod for /sdcard paths.
+/// its command wrapper prepends `wait-for-device`. With `use_root=True`, the
+/// successful path executes device-shell commands through `su -c`. It also
+/// checks whether the remote destination is a directory before each push.
+/// `chmod` first discovers external storage with `shell set`; it then skips
+/// chmod for /sdcard paths.
 #[derive(Default)]
 struct MozdevicePushState {
     external_storage_discovered: bool,
@@ -762,7 +764,7 @@ fn mozdevice_push(
     run_timed_adb_step(
         adb,
         serial,
-        &["wait-for-device", "shell", "sync"],
+        &["wait-for-device", "shell", &mozdevice_root_shell("sync")],
         "pre_push_sync",
         &mut timings,
     )?;
@@ -772,7 +774,11 @@ fn mozdevice_push(
     let _remote_is_directory = run_timed_adb_bool(
         adb,
         serial,
-        &["wait-for-device", "shell", "test", "-d", remote],
+        &[
+            "wait-for-device",
+            "shell",
+            &mozdevice_root_shell(&format!("test -d {remote}")),
+        ],
         "remote_directory_check",
         &mut timings,
     )?;
@@ -790,7 +796,7 @@ fn mozdevice_push(
         run_timed_adb_step(
             adb,
             serial,
-            &["wait-for-device", "shell", "set"],
+            &["wait-for-device", "shell", &mozdevice_root_shell("set")],
             "external_storage_discovery",
             &mut timings,
         )?;
@@ -800,7 +806,11 @@ fn mozdevice_push(
         run_timed_adb_step(
             adb,
             serial,
-            &["wait-for-device", "shell", "chmod", "-R", "777", remote],
+            &[
+                "wait-for-device",
+                "shell",
+                &mozdevice_root_shell(&format!("chmod -R 777 {remote}")),
+            ],
             "post_push_chmod",
             &mut timings,
         )?;
@@ -808,11 +818,25 @@ fn mozdevice_push(
     run_timed_adb_step(
         adb,
         serial,
-        &["wait-for-device", "shell", "sync"],
+        &["wait-for-device", "shell", &mozdevice_root_shell("sync")],
         "post_push_sync",
         &mut timings,
     )?;
     Ok(timings)
+}
+
+/// Match `mozdevice.ADBDevice.shell()` after its successful `use_root=True`
+/// capability probe. Python's `shlex.quote` leaves single safe words bare and
+/// single-quotes commands containing spaces.
+fn mozdevice_root_shell(command: &str) -> String {
+    if command
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || b"_@%+=:,./-".contains(&byte))
+    {
+        format!("su -c {command}")
+    } else {
+        format!("su -c '{}'", command.replace('\'', "'\"'\"'"))
+    }
 }
 
 fn run_timed_adb_step(
@@ -1444,21 +1468,21 @@ mod tests {
         assert_eq!(
             commands
                 .iter()
-                .filter(|line| line.contains("wait-for-device shell sync"))
+                .filter(|line| line.contains("wait-for-device shell su -c sync"))
                 .count(),
             4
         );
         assert_eq!(
             commands
                 .iter()
-                .filter(|line| line.contains("wait-for-device shell test -d"))
+                .filter(|line| line.contains("wait-for-device shell su -c 'test -d "))
                 .count(),
             2
         );
         assert_eq!(
             commands
                 .iter()
-                .filter(|line| line.contains("wait-for-device shell set"))
+                .filter(|line| line.contains("wait-for-device shell su -c set"))
                 .count(),
             1
         );
@@ -1471,13 +1495,26 @@ mod tests {
         let second_local = pushes[1].split_whitespace().nth(4).unwrap();
         assert_eq!(first_local, second_local);
         assert!(!commands.iter().any(|line| line.contains(" chmod ")));
-        assert!(commands[0].contains("wait-for-device shell sync"));
-        assert!(commands[1].contains("wait-for-device shell test -d"));
+        assert!(commands[0].contains("wait-for-device shell su -c sync"));
+        assert!(commands[1].contains("wait-for-device shell su -c 'test -d "));
         assert!(commands[2].contains("wait-for-device push"));
-        assert!(commands[3].contains("wait-for-device shell set"));
-        assert!(commands[4].contains("wait-for-device shell sync"));
+        assert!(commands[3].contains("wait-for-device shell su -c set"));
+        assert!(commands[4].contains("wait-for-device shell su -c sync"));
         assert!(is_external_storage_path("/sdcard/Download/file"));
         assert!(!is_external_storage_path("/data/local/tmp/file"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mozdevice_root_shell_matches_python_shlex_quote() {
+        assert_eq!(mozdevice_root_shell("sync"), "su -c sync");
+        assert_eq!(
+            mozdevice_root_shell("test -d /sdcard/Download"),
+            "su -c 'test -d /sdcard/Download'"
+        );
+        assert_eq!(
+            mozdevice_root_shell("echo don't"),
+            "su -c 'echo don'\"'\"'t'"
+        );
     }
 }
