@@ -165,6 +165,12 @@ pub struct AdbConfig {
     /// `direct` times one adb push. `mozdevice` times the compatibility
     /// sequence used by mozdevice.ADBDevice.push.
     pub push_mode: String,
+    /// Root-shell path selected by mozdevice compatibility mode. Omitted for
+    /// direct pushes and pulls.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mozdevice_root_mode: Option<String>,
+    /// Reject mozdevice runs unless the reference `su -c` path is available.
+    pub require_mozdevice_su: bool,
     pub sizes: Vec<AdbSizeSpec>,
 }
 

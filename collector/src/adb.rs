@@ -67,6 +67,25 @@ pub enum PushMode {
     Mozdevice,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MozdeviceRootMode {
+    RootShell,
+    SuC,
+    Su0,
+    DirectFallback,
+}
+
+impl MozdeviceRootMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::RootShell => "root_shell",
+            Self::SuC => "su_c",
+            Self::Su0 => "su_0",
+            Self::DirectFallback => "direct_fallback",
+        }
+    }
+}
+
 impl PushMode {
     fn as_str(self) -> &'static str {
         match self {
@@ -84,6 +103,7 @@ pub fn run(
     iterations_arg: Option<String>,
     direction: &str,
     push_mode: PushMode,
+    require_mozdevice_su: bool,
     json: bool,
 ) -> i32 {
     let mut sys = System::new();
@@ -126,6 +146,8 @@ pub fn run(
         remote_path: remote_dir.clone(),
         direction: direction.into(),
         push_mode: push_mode.as_str().into(),
+        mozdevice_root_mode: None,
+        require_mozdevice_su,
         sizes: specs
             .iter()
             .map(|s| AdbSizeSpec {
@@ -145,6 +167,20 @@ pub fn run(
             ErrorInfo {
                 kind: ERR_INVALID_ARGUMENTS.into(),
                 message: "--push-mode mozdevice requires --direction push".into(),
+            },
+            EXIT_RUNTIME_ERROR,
+        );
+    }
+    if require_mozdevice_su && push_mode != PushMode::Mozdevice {
+        return emit_failure(
+            json,
+            host,
+            cpu,
+            Some(adb_config),
+            None,
+            ErrorInfo {
+                kind: ERR_INVALID_ARGUMENTS.into(),
+                message: "--require-mozdevice-su requires --push-mode mozdevice".into(),
             },
             EXIT_RUNTIME_ERROR,
         );
@@ -181,6 +217,32 @@ pub fn run(
             return emit_failure(json, host, cpu, Some(adb_config), Some(adb_env), err, exit);
         }
     };
+    let mozdevice_root_mode = (push_mode == PushMode::Mozdevice)
+        .then(|| detect_mozdevice_root_mode(&adb_bin, &device.serial));
+    let mut adb_config = adb_config;
+    adb_config.mozdevice_root_mode = mozdevice_root_mode.map(|mode| mode.as_str().into());
+    if require_mozdevice_su && mozdevice_root_mode != Some(MozdeviceRootMode::SuC) {
+        return emit_failure(
+            json,
+            host,
+            cpu,
+            Some(adb_config),
+            Some(adb_env),
+            ErrorInfo {
+                kind: ERR_ADB_COMMAND_FAILED.into(),
+                message: format!(
+                    "--require-mozdevice-su requires su -c root access; detected {}",
+                    mozdevice_root_mode.unwrap().as_str()
+                ),
+            },
+            EXIT_RUNTIME_ERROR,
+        );
+    }
+    if mozdevice_root_mode == Some(MozdeviceRootMode::DirectFallback) {
+        eprintln!(
+            "adb: mozdevice root mode=direct_fallback; this matches an unrooted mozdevice client, not a strict su -c reproduction (use --require-mozdevice-su to fail instead)"
+        );
+    }
 
     let load_pre_warmup = sample_load();
     let load_pre_timed = sample_load();
@@ -193,6 +255,7 @@ pub fn run(
         direction != "pull",
         direction != "push",
         push_mode,
+        mozdevice_root_mode,
     );
 
     let load_post_timed = sample_load();
@@ -481,6 +544,7 @@ fn run_iterations(
     timed_push: bool,
     timed_pull: bool,
     push_mode: PushMode,
+    mozdevice_root_mode: Option<MozdeviceRootMode>,
 ) -> Result<Vec<AdbIteration>, ErrorInfo> {
     let mut all = Vec::new();
     let tty = std::io::stderr().is_terminal();
@@ -508,7 +572,10 @@ fn run_iterations(
     let _cleanup = WorkDir(work_dir.clone());
     // ADBDevice caches its external-storage discovery after the first chmod
     // attempt. Keep the equivalent state across all pushes in this invocation.
-    let mut mozdevice_state = MozdevicePushState::default();
+    let mut mozdevice_state = MozdevicePushState {
+        root_mode: mozdevice_root_mode.unwrap_or(MozdeviceRootMode::DirectFallback),
+        ..Default::default()
+    };
 
     for spec in specs {
         let n = spec.iterations as usize;
@@ -745,9 +812,18 @@ fn direct_push(adb: &str, serial: &str, local: &Path, remote: &str) -> Result<()
 /// checks whether the remote destination is a directory before each push.
 /// `chmod` first discovers external storage with `shell set`; it then skips
 /// chmod for /sdcard paths.
-#[derive(Default)]
 struct MozdevicePushState {
     external_storage_discovered: bool,
+    root_mode: MozdeviceRootMode,
+}
+
+impl Default for MozdevicePushState {
+    fn default() -> Self {
+        Self {
+            external_storage_discovered: false,
+            root_mode: MozdeviceRootMode::DirectFallback,
+        }
+    }
 }
 
 fn mozdevice_push(
@@ -764,7 +840,11 @@ fn mozdevice_push(
     run_timed_adb_step(
         adb,
         serial,
-        &["wait-for-device", "shell", &mozdevice_root_shell("sync")],
+        &[
+            "wait-for-device",
+            "shell",
+            &mozdevice_shell("sync", state.root_mode),
+        ],
         "pre_push_sync",
         &mut timings,
     )?;
@@ -777,7 +857,7 @@ fn mozdevice_push(
         &[
             "wait-for-device",
             "shell",
-            &mozdevice_root_shell(&format!("test -d {remote}")),
+            &mozdevice_shell(&format!("test -d {remote}"), state.root_mode),
         ],
         "remote_directory_check",
         &mut timings,
@@ -796,7 +876,11 @@ fn mozdevice_push(
         run_timed_adb_step(
             adb,
             serial,
-            &["wait-for-device", "shell", &mozdevice_root_shell("set")],
+            &[
+                "wait-for-device",
+                "shell",
+                &mozdevice_shell("set", state.root_mode),
+            ],
             "external_storage_discovery",
             &mut timings,
         )?;
@@ -809,7 +893,7 @@ fn mozdevice_push(
             &[
                 "wait-for-device",
                 "shell",
-                &mozdevice_root_shell(&format!("chmod -R 777 {remote}")),
+                &mozdevice_shell(&format!("chmod -R 777 {remote}"), state.root_mode),
             ],
             "post_push_chmod",
             &mut timings,
@@ -818,24 +902,58 @@ fn mozdevice_push(
     run_timed_adb_step(
         adb,
         serial,
-        &["wait-for-device", "shell", &mozdevice_root_shell("sync")],
+        &[
+            "wait-for-device",
+            "shell",
+            &mozdevice_shell("sync", state.root_mode),
+        ],
         "post_push_sync",
         &mut timings,
     )?;
     Ok(timings)
 }
 
-/// Match `mozdevice.ADBDevice.shell()` after its successful `use_root=True`
-/// capability probe. Python's `shlex.quote` leaves single safe words bare and
+/// Mirror the successful root-selection branches in `ADBDevice(use_root=True)`.
+/// Failures are intentionally non-fatal: mozdevice falls back to a normal shell.
+fn detect_mozdevice_root_mode(adb: &str, serial: &str) -> MozdeviceRootMode {
+    if adb_shell_is_root(adb, serial, "id") {
+        return MozdeviceRootMode::RootShell;
+    }
+    let _ = Command::new(adb).args(["-s", serial, "root"]).output();
+    if adb_shell_is_root(adb, serial, "id") {
+        return MozdeviceRootMode::RootShell;
+    }
+    let _ = Command::new(adb)
+        .args(["-s", serial, "wait-for-device", "shell", "su -c setenforce 0"])
+        .output();
+    if adb_shell_is_root(adb, serial, "su -c id") {
+        return MozdeviceRootMode::SuC;
+    }
+    if adb_shell_is_root(adb, serial, "su 0 id") {
+        return MozdeviceRootMode::Su0;
+    }
+    MozdeviceRootMode::DirectFallback
+}
+
+fn adb_shell_is_root(adb: &str, serial: &str, command: &str) -> bool {
+    Command::new(adb)
+        .args(["-s", serial, "wait-for-device", "shell", command])
+        .output()
+        .is_ok_and(|output| output.status.success() && String::from_utf8_lossy(&output.stdout).contains("uid=0"))
+}
+
+/// Match `mozdevice.ADBDevice.shell()` after its `use_root=True` capability
+/// probe. Python's `shlex.quote` leaves single safe words bare and
 /// single-quotes commands containing spaces.
-fn mozdevice_root_shell(command: &str) -> String {
-    if command
+fn mozdevice_shell(command: &str, root_mode: MozdeviceRootMode) -> String {
+    match root_mode {
+        MozdeviceRootMode::RootShell | MozdeviceRootMode::DirectFallback => command.into(),
+        MozdeviceRootMode::Su0 => format!("su 0 {command}"),
+        MozdeviceRootMode::SuC if command
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || b"_@%+=:,./-".contains(&byte))
-    {
-        format!("su -c {command}")
-    } else {
-        format!("su -c '{}'", command.replace('\'', "'\"'\"'"))
+        => format!("su -c {command}"),
+        MozdeviceRootMode::SuC => format!("su -c '{}'", command.replace('\'', "'\"'\"'")),
     }
 }
 
@@ -1323,6 +1441,7 @@ mod tests {
             true,
             false,
             PushMode::Direct,
+            None,
         )
         .unwrap();
 
@@ -1364,6 +1483,7 @@ mod tests {
             false,
             true,
             PushMode::Direct,
+            None,
         )
         .unwrap();
 
@@ -1404,7 +1524,10 @@ mod tests {
         let adb = dir.join("fake-adb");
         fs::write(
             &adb,
-            format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n", log.display()),
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \"$*\" in *'shell su -c id') echo 'uid=0(root)' ;; esac\n",
+                log.display()
+            ),
         )
         .unwrap();
         fs::set_permissions(&adb, fs::Permissions::from_mode(0o755)).unwrap();
@@ -1414,6 +1537,8 @@ mod tests {
             model: "model".into(),
             hub_path: None,
         };
+        let root_mode = detect_mozdevice_root_mode(adb.to_str().unwrap(), &device.serial);
+        assert_eq!(root_mode, MozdeviceRootMode::SuC);
         let results = run_iterations(
             adb.to_str().unwrap(),
             &device,
@@ -1425,6 +1550,7 @@ mod tests {
             true,
             false,
             PushMode::Mozdevice,
+            Some(root_mode),
         )
         .unwrap();
 
@@ -1482,7 +1608,10 @@ mod tests {
         assert_eq!(
             commands
                 .iter()
-                .filter(|line| line.contains("wait-for-device shell su -c set"))
+                .filter(|line| {
+                    line.contains("wait-for-device shell su -c set")
+                        && !line.contains("setenforce")
+                })
                 .count(),
             1
         );
@@ -1495,25 +1624,35 @@ mod tests {
         let second_local = pushes[1].split_whitespace().nth(4).unwrap();
         assert_eq!(first_local, second_local);
         assert!(!commands.iter().any(|line| line.contains(" chmod ")));
-        assert!(commands[0].contains("wait-for-device shell su -c sync"));
-        assert!(commands[1].contains("wait-for-device shell su -c 'test -d "));
-        assert!(commands[2].contains("wait-for-device push"));
-        assert!(commands[3].contains("wait-for-device shell su -c set"));
-        assert!(commands[4].contains("wait-for-device shell su -c sync"));
+        assert!(commands[0].contains("wait-for-device shell id"));
+        assert!(commands[1].contains(" root"));
+        assert!(commands[2].contains("wait-for-device shell id"));
+        assert!(commands[3].contains("wait-for-device shell su -c setenforce 0"));
+        assert!(commands[4].contains("wait-for-device shell su -c id"));
+        assert!(commands[5].contains("wait-for-device shell su -c sync"));
+        assert!(commands[6].contains("wait-for-device shell su -c 'test -d "));
+        assert!(commands[7].contains("wait-for-device push"));
+        assert!(commands[8].contains("wait-for-device shell su -c set"));
+        assert!(commands[9].contains("wait-for-device shell su -c sync"));
         assert!(is_external_storage_path("/sdcard/Download/file"));
         assert!(!is_external_storage_path("/data/local/tmp/file"));
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn mozdevice_root_shell_matches_python_shlex_quote() {
-        assert_eq!(mozdevice_root_shell("sync"), "su -c sync");
+    fn mozdevice_shell_matches_python_shlex_quote() {
         assert_eq!(
-            mozdevice_root_shell("test -d /sdcard/Download"),
+            mozdevice_shell("sync", MozdeviceRootMode::DirectFallback),
+            "sync"
+        );
+        assert_eq!(mozdevice_shell("sync", MozdeviceRootMode::SuC), "su -c sync");
+        assert_eq!(mozdevice_shell("sync", MozdeviceRootMode::Su0), "su 0 sync");
+        assert_eq!(
+            mozdevice_shell("test -d /sdcard/Download", MozdeviceRootMode::SuC),
             "su -c 'test -d /sdcard/Download'"
         );
         assert_eq!(
-            mozdevice_root_shell("echo don't"),
+            mozdevice_shell("echo don't", MozdeviceRootMode::SuC),
             "su -c 'echo don'\"'\"'t'"
         );
     }

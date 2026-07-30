@@ -124,6 +124,10 @@ enum Command {
         /// mozdevice mode requires --direction push.
         #[arg(long, value_enum, default_value_t = adb::PushMode::Direct)]
         push_mode: adb::PushMode,
+        /// Require the `su -c` root-shell branch used for strict mozdevice
+        /// reproduction. Fails before timing when it is unavailable.
+        #[arg(long)]
+        require_mozdevice_su: bool,
         #[arg(long)]
         json: bool,
     },
@@ -264,6 +268,7 @@ fn main() {
             sizes,
             iterations,
             push_mode,
+            require_mozdevice_su,
             json,
         } => adb::run(
             adb_path,
@@ -273,6 +278,7 @@ fn main() {
             iterations,
             direction.as_str(),
             push_mode,
+            require_mozdevice_su,
             json,
         ),
     };

@@ -163,7 +163,11 @@ Operational model:
   `--push-mode mozdevice` requires `--direction push` and times the successful
   `mozdevice.ADBDevice.push()` path: pre/post device sync, `wait-for-device
   push`, and chmod where mozdevice applies it. It reuses one local payload to
-  match that probe; the selected mode is recorded in `adb_config.push_mode`.
+  match that probe. `adb_config.mozdevice_root_mode` records whether the
+  reference root setup selected `root_shell`, `su_c`, `su_0`, or
+  `direct_fallback`; the latter is equivalent to an unrooted mozdevice client,
+  not a strict `su -c` reproduction. Pass `--require-mozdevice-su` to fail
+  before timing unless the `su -c` path is available.
 - **Sizes & iterations.** Defaults emphasize the 25-byte point (where vendor
   variance shows up — that workload is dominated by command/setup overhead,
   not bytes on the wire), then progressively larger transfers:
