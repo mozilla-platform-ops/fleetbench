@@ -9,6 +9,8 @@ copy/paste-ready launch command.
 
 | Date | Host | Phase | Version | Outcome | Notes |
 |---|---|---|---|---|---|
+| Pending run | `.55` (`test-1`) | Sustained literal Python phase diagnostic | Sparky Try `7757fb…` | Planned | Eight-device, 5,000-iteration Python `mozdevice` run with per-subprocess diagnostics to explain the remaining Fleetbench-versus-Python gap. |
+| 2026-07-29 | `.55` (`test-1`) | Bracketed Python controls + Fleetbench `mozdevice` | `v0.4.5` | Command-path gap remains | Python controls held a ~294–295 ms median; 40,000 Fleetbench samples were clean but had a 136.61 ms median. |
 | Pending release | `.55`, then `.47` | Eight-device 25 B `mozdevice` push validation | Next release | Planned | Direct Fleetbench analogue of Sparky's probe on each all-a55 host; require bare USB serials and sustained overlap before interpreting either distribution. |
 | Pending release | `.55`, then `.47` | Directional saturation suite | Next release | Planned | All eight devices per host; sustained 25 B and 50 KiB push, then pull. Run only after each host's `mozdevice` validation is clean. |
 | 2026-07-29 | Local Pixel 10 Pro | Interleaved Python vs Fleetbench `mozdevice` | `b7f629b` + `67c3e78` diagnostics | Near parity | Four alternating 50-sample blocks per implementation (200 each): Fleetbench mean was 1.7% lower, and phase timings matched. |
@@ -22,6 +24,35 @@ both hosts. Any previous `stab`-pool performance issue is historical context,
 not a reason to exclude `.47` from the new comparison.
 
 ## Results
+
+### 2026-07-29 — `.55` bracketed `mozdevice` controls and Fleetbench v0.4.5
+
+To validate the released Fleetbench implementation against the literal
+historical client, eight devices ran a 200-iteration Python control, followed
+by an eight-device 5,000-iteration Fleetbench `--push-mode mozdevice` run, and
+then a second 200-iteration Python control. All 24 jobs completed with the
+eight intended bare USB serials. Fleetbench emitted 40,000 valid,
+checksum-verified samples from `v0.4.5` (`3d49553`).
+
+| Run | Samples | Mean | Median | p95 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|---:|
+| Literal Python control before | 1,600 | 294.66 ms | 295.24 ms | 336.61 ms | 358.60 ms | 1,566.71 ms |
+| Fleetbench v0.4.5 `mozdevice` | 40,000 | 144.58 ms | 136.61 ms | 201.12 ms | 217.00 ms | 1,263.80 ms |
+| Literal Python control after | 1,600 | 292.89 ms | 294.36 ms | 333.54 ms | 355.68 ms | 425.94 ms |
+
+The Python controls reproduce the normal `.55` baseline and the first control
+also captured one 1,567 ms tail event. Fleetbench had zero checksum failures
+and maintained all eight streams concurrently for at least 10.7 minutes, but
+its central distribution remained roughly half the literal Python timing. Its
+phase diagnostics account for the full outer timing: median pre-sync 45.00 ms,
+directory check 25.64 ms, push 19.16 ms, and post-sync 47.54 ms. No intended
+Rust subprocess phase is absent from those samples.
+
+The before-control began its timed loop about two minutes before Fleetbench;
+the after-control started about 32 minutes after Fleetbench's timed loop ended,
+so it confirms baseline stability but is not a tightly bracketed post-control.
+Run the pending long literal-Python diagnostic with phase artifacts before
+claiming the remaining difference is only host-runtime overhead.
 
 ### Pending release — `.55` and `.47` host-wide follow-ups
 
