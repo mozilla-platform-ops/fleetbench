@@ -46,18 +46,20 @@ to the stated host, and is reachable through bare USB serial selection. A
 one-device smoke is appropriate when that needs verification; it is not a
 saturation result.
 
-## Run each host in five sustained-contention phases
+## Run each host in seven sustained-contention phases
 
 Download and validate the JSON, log, and manifest artifacts after every phase
 before launching the next one.
 
 | Phase | Launcher | Purpose |
 |---|---|---|
-| bulk | `run_bulk.sh` | Mixed push/pull baseline over 25 B, 1 MiB, 10 MiB, and 100 MiB. |
+| bulk (supplemental) | `run_bulk.sh` | Mixed push/pull production-profile baseline over 25 B, 1 MiB, 10 MiB, and 100 MiB; not directional SLA evidence. |
 | latency push, 25 B | `run_push_only.sh` | Sustained direct-push contention; set `FLEETBENCH_PUSH_MODE=mozdevice` for the mozdevice-compatible path. |
 | latency pull, 25 B | `run_pull_only.sh` | Sustained 25-byte pull contention. |
 | latency push, 50 KiB | `run_push_only.sh` | Sustained 50 KiB push contention. |
 | latency pull, 50 KiB | `run_pull_only.sh` | Sustained 50 KiB pull contention. |
+| throughput push, 100 MiB | `run_push_only.sh` | Dedicated sustained push throughput at full contention. |
+| throughput pull, 100 MiB | `run_pull_only.sh` | Dedicated sustained pull throughput at full contention. |
 
 Do not set `FLEETBENCH_RUNS` for these runs. Repeating a long-running push/pull
 collector invocation introduces gaps and weakens overlap. Pass configuration to
@@ -90,7 +92,9 @@ lt_run_cmd \
 
 Use `--env FLEETBENCH_TRANSFER_SIZE=25B` or `50K` with either directional
 launcher. For push, optionally add `--env FLEETBENCH_PUSH_ITERATIONS=5000`; for
-pull, use `--env FLEETBENCH_PULL_ITERATIONS=5000`. Substitute exactly one
+pull, use `--env FLEETBENCH_PULL_ITERATIONS=5000`. The dedicated 100 MiB phases
+require the directional-launcher support tracked by `fleetbench-gpx`; do not
+substitute the mixed bulk phase for that evidence. Substitute exactly one
 approved eight-device set and use a label that names its host, direction, and
 size. Never launch commands for the two hosts concurrently.
 
@@ -123,8 +127,9 @@ observed peer-overlap level, including the largest cohort.
 
 Acceptance references:
 
-- 100 MiB: median throughput at least 20 MiB/s; preferred range 25–32 MiB/s;
-  p95 elapsed time about 5 seconds or less.
+- 100 MiB: use dedicated push-only and pull-only phases; in each direction,
+  median throughput at least 20 MiB/s, preferred range 25–32 MiB/s, and p95
+  elapsed time about 5 seconds or less. The mixed bulk phase is supplemental.
 - 25 B: mean at most 375 ms, p95 at most 500 ms, p99 at most 750 ms.
 - 50 KiB: p95 at most 1 second; 500 ms is preferred.
 

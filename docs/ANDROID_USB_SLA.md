@@ -204,6 +204,11 @@ separately to expose devices that a median could conceal. The 50 KiB latency
 floor is met when p95 is at most one second. These criteria apply to push and
 pull independently.
 
+Demonstrate the 100 MiB bandwidth objectives with dedicated, sustained
+push-only and pull-only phases at the agreed peak concurrency. A mixed
+push/pull run is useful supplemental evidence of a representative workload,
+but cannot substitute for either directional acceptance measurement.
+
 The shape of the latency distribution is diagnostic rather than a requirement
 to pass a formal normality test. A skewed or multimodal distribution is
 acceptable only if it still satisfies the quantile and dispersion limits and
