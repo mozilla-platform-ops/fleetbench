@@ -11,8 +11,10 @@ copy/paste-ready launch command.
 |---|---|---|---|---|---|
 | 2026-07-30 | `.55` (`test-1`) | 5,000-iteration rooted Python control + Fleetbench `mozdevice` | Python Try `7757fb…`; `v0.4.6` | Rooted parity validated | All eight bare USB serials completed 5,000 samples per implementation; both selected `su -c`. Fleetbench median was 326.10 ms vs Python 327.09 ms (-0.30%). |
 | 2026-07-29 | `.55` (`test-1`) | Bracketed Python controls + Fleetbench `mozdevice` | `v0.4.5` | Command-path gap remains | Python controls held a ~294–295 ms median; 40,000 Fleetbench samples were clean but had a 136.61 ms median. |
-| Pending run | `.47` | Eight-device 25 B `mozdevice` push validation | `v0.4.6` | Planned | Repeat the validated `.55` rooted comparison on the second all-a55 host; require bare USB serials and sustained overlap before interpreting either distribution. |
-| Pending release | `.55`, then `.47` | Directional saturation suite | Next release | Planned | All eight devices per host; sustained 25 B and 50 KiB push, then pull. Run only after each host's `mozdevice` validation is clean. |
+| Pending run | `.47` | Paired rooted Python control + Fleetbench 25 B `mozdevice` validation | Python Try `7757fb…`; `v0.4.6` | Planned | Run the long literal-Python control and matching Fleetbench mode against the same eight a55 devices, with bare USB serials and sustained overlap. This establishes the `.47` host baseline as well as cross-implementation parity. |
+| Pending task | Host launcher | Enforce rooted mozdevice equivalence | `fleetbench-cyz` | Planned | Forward `--require-mozdevice-su` so a rooted acceptance run fails before timing unless it selects `su_c`; retain the reported root mode in every artifact. |
+| Pending release | `.55`, then `.47` | Full-contention saturation suite | Next release | Planned | After each host's `mozdevice` validation is clean, run eight-device 25 B `mozdevice` push, 50 KiB direct push/pull, and 100 MiB push/pull. The exact 100 MiB launcher design remains to be settled because the SLA is directional while the current bulk launcher is mixed-direction. |
+| Future measurement | `.55` and `.47` | Composite-latency SLA calibration | Current release | Planned | Collect at least three clean, separated eight-device rooted `mozdevice` runs per host, retaining per-device and peer-overlap summaries, before tightening latency objectives. |
 | 2026-07-29 | Local Pixel 10 Pro | Interleaved Python vs Fleetbench `mozdevice` | `b7f629b` + `67c3e78` diagnostics | Near parity | Four alternating 50-sample blocks per implementation (200 each): Fleetbench mean was 1.7% lower, and phase timings matched. |
 | 2026-07-28 | `.55` (`test-1`) | Literal Sparky `mozdevice` probe | Try `7757fb…` | Baseline reproduced | Eight bare USB serials / 1,600 raw replicates: 292.01 ms median, 332.39 ms p95, 393.68 ms maximum. This recovered Sparky's ~280 ms baseline, but not the historical LambdaTest tail. |
 | 2026-07-28 | Local Pixel 10 Pro | Python vs Fleetbench `mozdevice` | `b7f629b` | Tail parity | Sequential 200-sample probes; Fleetbench p95/p99 matched the literal Python client within 2%/3%, while its median was 16% lower. |
@@ -52,8 +54,10 @@ not material to the 40,000-sample sustained distribution.
 
 This removes the command-path gap seen in v0.4.5 and validates Fleetbench's
 rooted `su -c` compatibility path on the `.55` shared host. The next direct
-comparison is the same validation on `.47`, followed by the directional
-saturation suite.
+comparison is a paired long literal-Python control and matching Fleetbench run
+on `.47`, followed by the full-contention saturation suite. Before tightening
+the composite latency SLA, collect at least three clean, separated eight-device
+runs on each host and retain their per-device and peer-overlap summaries.
 
 ### 2026-07-29 — `.55` bracketed `mozdevice` controls and Fleetbench v0.4.5
 
@@ -84,22 +88,30 @@ so it confirms baseline stability but is not a tightly bracketed post-control.
 Run the pending long literal-Python diagnostic with phase artifacts before
 claiming the remaining difference is only host-runtime overhead.
 
-### Pending release — `.55` and `.47` host-wide follow-ups
+### Pending host-wide follow-ups
 
-The local interleaved test provides command-path fidelity evidence only. After
-the next release includes that path, run these two tests in order on `.55`
-(`test-1`) and then `.47`:
+The local interleaved test provides command-path fidelity evidence only. The
+`.55` long-run comparison validates the released rooted implementation on one
+host; repeat a paired comparison on `.47` before interpreting cross-host
+results. Then run the saturation suite per host, never concurrently:
 
-1. **Eight-device 25 B `mozdevice` push validation.** Run the directional
-   push launcher with `FLEETBENCH_PUSH_MODE=mozdevice` against all eight bare
-   USB serials on each host. Use sustained iterations so the timed transfer
-   windows overlap. Compare the resulting distributions with the `.55`
-   literal-Python baseline; do not make a host-wide conclusion if a device
-   selects TCP or overlap is absent.
-2. **Directional saturation suite.** Only after the validation is clean on a
-   host, run all eight of its devices through sustained 25 B and 50 KiB push,
-   then the same two sizes for pull. Analyze each direction and size by
-   observed peer overlap.
+1. **`.47` paired rooted parity validation.** Run the long literal-Python
+   control and then the matching Fleetbench `v0.4.6` 25 B
+   `--push-mode mozdevice` workload against all eight bare USB serials. Use
+   sustained iterations so the timed transfer windows overlap. The rooted
+   Fleetbench launcher must enforce `--require-mozdevice-su`; do not make a
+   host-wide conclusion if a device selects TCP, root mode is not `su_c`, or
+   overlap is absent.
+2. **Per-host full-contention saturation suite.** After parity is clean on a
+   host, run all eight devices through sustained 25 B `mozdevice` push, then
+   direct 50 KiB push and pull, and finally 100 MiB push and pull. Analyze
+   each direction and size by observed peer overlap. Decide whether the
+   100 MiB phases require directional launchers or whether a mixed-direction
+   production workload has a separately justified acceptance interpretation.
+3. **Composite-latency calibration.** Before lowering the 25 B `mozdevice`
+   objectives, collect at least three clean, separated eight-device runs per
+   host. Preserve aggregate, per-device, and peer-overlap distributions rather
+   than pooling away host-state variation.
 
 With both target sets now all a55, compare `.55` and `.47` as current
 host-level observations, while still avoiding a causal claim from an
