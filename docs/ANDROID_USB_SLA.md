@@ -64,6 +64,7 @@ binary (1 MiB = 1,048,576 bytes).
 | Operation | Required objective | Purpose |
 |---|---:|---|
 | Production latency probe: 25-byte push to `/sdcard/Download` | mean near 375 ms; p95 <= 500 ms; p99 <= 750 ms; standard deviation approximately <= 125 ms | End-to-end latency under production conditions |
+| Mozdevice-compatible setup probe: 25-byte push to `/sdcard/Download` | mean near 375 ms; p95 <= 500 ms; p99 <= 750 ms; standard deviation approximately <= 125 ms; rooted fleets require `mozdevice_root_mode == "su_c"` | End-to-end `mozdevice.ADBDevice.push()` setup path used by test jobs |
 | 100 MiB push and pull to `/data/local/tmp/` | median throughput >= 20 MiB/s; preferred range 25-32 MiB/s per device; p95 elapsed approximately <= 5.0 s | Bulk-transfer floor and target |
 | Small-transfer probe: 50 KiB push and pull | p95 elapsed <= 1.0 s; preferred p95 <= 500 ms | Detects congestion hidden by bulk averages |
 
@@ -86,6 +87,29 @@ The p95 and p99 limits are the operational tail requirements. An isolated
 maximum above those limits should be reported and investigated, but a single
 outlier does not by itself characterize the service. A recurring tail or a
 failure of the p95/p99 limits is non-compliant.
+
+### Mozdevice-compatible setup latency
+
+The mozdevice-compatible 25-byte probe is an additional workload requirement,
+not a replacement for the direct production-latency probe or the bulk-transfer
+objectives. It measures the successful `mozdevice.ADBDevice.push()` path:
+device-shell synchronization, remote-directory check, push, first-call
+external-storage discovery, and post-push synchronization. For tiny payloads,
+this setup work dominates the elapsed time and represents test-job behavior
+that a single direct `adb push` does not capture.
+
+Run it with `fleetbench adb --direction push --push-mode mozdevice`, targeting
+`/sdcard/Download` with a 25-byte payload. Every result must report
+`adb_config.mozdevice_root_mode`. On fleets where the production mozdevice
+client has root access, acceptance requires `su_c`; `direct_fallback` is a
+valid unrooted-client measurement but must be reported separately and cannot
+be treated as equivalent to the rooted workload.
+
+This probe has the same statistical objectives as the production 25-byte
+latency probe: mean near 375 ms, p95 at most 500 ms, p99 at most 750 ms, and
+standard deviation approximately at most 125 ms. The requirements apply to
+the complete outer operation; phase timings are diagnostic evidence for a
+regression, not separate pass/fail metrics.
 
 ### Additional throughput and small-transfer guidance
 
