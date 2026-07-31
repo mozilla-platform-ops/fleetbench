@@ -58,8 +58,8 @@ before launching the next one.
 | latency pull, 25 B | `run_pull_only.sh` | Sustained 25-byte pull contention. |
 | latency push, 50 KiB | `run_push_only.sh` | Sustained 50 KiB push contention. |
 | latency pull, 50 KiB | `run_pull_only.sh` | Sustained 50 KiB pull contention. |
-| throughput push, 100 MiB | `run_push_only.sh` | Dedicated sustained push throughput at full contention. |
-| throughput pull, 100 MiB | `run_pull_only.sh` | Dedicated sustained pull throughput at full contention. |
+| throughput push, 100 MiB | `run_push_only.sh` | Dedicated sustained push throughput at full contention to `/data/local/tmp/`. |
+| throughput pull, 100 MiB | `run_pull_only.sh` | Dedicated sustained pull throughput at full contention to `/data/local/tmp/`. |
 
 Do not set `FLEETBENCH_RUNS` for these runs. Repeating a long-running push/pull
 collector invocation introduces gaps and weakens overlap. Pass configuration to
@@ -90,13 +90,19 @@ lt_run_cmd \
   --device <serial-7> --device <serial-8>
 ```
 
-Use `--env FLEETBENCH_TRANSFER_SIZE=25B` or `50K` with either directional
-launcher. For push, optionally add `--env FLEETBENCH_PUSH_ITERATIONS=5000`; for
-pull, use `--env FLEETBENCH_PULL_ITERATIONS=5000`. The dedicated 100 MiB phases
-require the directional-launcher support tracked by `fleetbench-gpx`; do not
-substitute the mixed bulk phase for that evidence. Substitute exactly one
-approved eight-device set and use a label that names its host, direction, and
-size. Never launch commands for the two hosts concurrently.
+Use `--env FLEETBENCH_TRANSFER_SIZE=25B`, `50K`, or `100M` with either
+directional launcher. The 25 B and 50 KiB defaults are 5,000 iterations; the
+100 MiB default is 20 iterations. Override that count with
+`FLEETBENCH_PUSH_ITERATIONS` or `FLEETBENCH_PULL_ITERATIONS` only when a
+different sustained duration is needed. The 25 B/50 KiB probes use
+`/sdcard/Download`; the 100 MiB launchers select `/data/local/tmp/` for the
+bandwidth SLA. For a rooted 25 B mozdevice acceptance run, add both
+`--env FLEETBENCH_PUSH_MODE=mozdevice` and
+`--env FLEETBENCH_REQUIRE_MOZDEVICE_SU=1`; this fails before timing unless the
+collector selects `su_c`. Do not substitute the mixed bulk phase for the
+directional 100 MiB evidence. Substitute exactly one approved eight-device set
+and use a label that names its host, direction, and size. Never launch commands
+for the two hosts concurrently.
 
 ### Exact Sparky 25 B mozdevice check
 

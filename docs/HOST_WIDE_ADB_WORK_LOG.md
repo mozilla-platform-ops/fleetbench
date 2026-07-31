@@ -12,8 +12,7 @@ copy/paste-ready launch command.
 | 2026-07-30 | `.55` (`test-1`) | 5,000-iteration rooted Python control + Fleetbench `mozdevice` | Python Try `7757fb…`; `v0.4.6` | Rooted parity validated | All eight bare USB serials completed 5,000 samples per implementation; both selected `su -c`. Fleetbench median was 326.10 ms vs Python 327.09 ms (-0.30%). |
 | 2026-07-29 | `.55` (`test-1`) | Bracketed Python controls + Fleetbench `mozdevice` | `v0.4.5` | Command-path gap remains | Python controls held a ~294–295 ms median; 40,000 Fleetbench samples were clean but had a 136.61 ms median. |
 | Pending run | `.47` | Paired rooted Python control + Fleetbench 25 B `mozdevice` validation | Python Try `7757fb…`; `v0.4.6` | Planned | Run the long literal-Python control and matching Fleetbench mode against the same eight a55 devices, with bare USB serials and sustained overlap. This establishes the `.47` host baseline as well as cross-implementation parity. |
-| Pending task | Host launcher | Enforce rooted mozdevice equivalence | `fleetbench-cyz` | Planned | Forward `--require-mozdevice-su` so a rooted acceptance run fails before timing unless it selects `su_c`; retain the reported root mode in every artifact. |
-| Pending release | `.55`, then `.47` | Full-contention saturation suite | Next release | Planned | After each host's `mozdevice` validation is clean, run eight-device 25 B `mozdevice` push, 50 KiB direct push/pull, and dedicated 100 MiB push/pull. Mixed bulk remains supplemental; directional 100 MiB launcher support is tracked by `fleetbench-gpx`. |
+| Pending run | `.55`, then `.47` | Full-contention saturation suite | `v0.4.6` | Planned | After each host's `mozdevice` validation is clean, run eight-device 25 B `mozdevice` push with strict `su_c`, 50 KiB direct push/pull, and dedicated 100 MiB push/pull. Mixed bulk remains supplemental. |
 | Future measurement | `.55` and `.47` | Composite-latency SLA calibration | Current release | Planned | Collect at least three clean, separated eight-device rooted `mozdevice` runs per host, retaining per-device and peer-overlap summaries, before tightening latency objectives. |
 | 2026-07-29 | Local Pixel 10 Pro | Interleaved Python vs Fleetbench `mozdevice` | `b7f629b` + `67c3e78` diagnostics | Near parity | Four alternating 50-sample blocks per implementation (200 each): Fleetbench mean was 1.7% lower, and phase timings matched. |
 | 2026-07-28 | `.55` (`test-1`) | Literal Sparky `mozdevice` probe | Try `7757fb…` | Baseline reproduced | Eight bare USB serials / 1,600 raw replicates: 292.01 ms median, 332.39 ms p95, 393.68 ms maximum. This recovered Sparky's ~280 ms baseline, but not the historical LambdaTest tail. |
@@ -98,17 +97,16 @@ results. Then run the saturation suite per host, never concurrently:
 1. **`.47` paired rooted parity validation.** Run the long literal-Python
    control and then the matching Fleetbench `v0.4.6` 25 B
    `--push-mode mozdevice` workload against all eight bare USB serials. Use
-   sustained iterations so the timed transfer windows overlap. The rooted
-   Fleetbench launcher must enforce `--require-mozdevice-su`; do not make a
-   host-wide conclusion if a device selects TCP, root mode is not `su_c`, or
-   overlap is absent.
+   sustained iterations so the timed transfer windows overlap. Set
+   `FLEETBENCH_REQUIRE_MOZDEVICE_SU=1` so the rooted Fleetbench launcher
+   enforces `--require-mozdevice-su`; do not make a host-wide conclusion if a
+   device selects TCP, root mode is not `su_c`, or overlap is absent.
 2. **Per-host full-contention saturation suite.** After parity is clean on a
    host, run all eight devices through sustained 25 B `mozdevice` push, then
    direct 50 KiB push and pull, and finally dedicated 100 MiB push and pull.
    Analyze each direction and size by observed peer overlap. The mixed bulk
    run remains supplemental production-profile evidence; it cannot replace
-   either directional 100 MiB SLA phase. The required launcher support is
-   tracked by `fleetbench-gpx`.
+   either directional 100 MiB SLA phase.
 3. **Composite-latency calibration.** Before lowering the 25 B `mozdevice`
    objectives, collect at least three clean, separated eight-device runs per
    host. Preserve aggregate, per-device, and peer-overlap distributions rather
