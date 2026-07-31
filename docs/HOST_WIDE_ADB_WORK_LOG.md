@@ -9,9 +9,9 @@ copy/paste-ready launch command.
 
 | Date | Host | Phase | Version | Outcome | Notes |
 |---|---|---|---|---|---|
-| Pending run | `.55` (`test-1`) | Sustained literal Python phase diagnostic | Sparky Try `7757fb…` | Planned | Eight-device, 5,000-iteration Python `mozdevice` run with per-subprocess diagnostics to explain the remaining Fleetbench-versus-Python gap. |
+| 2026-07-30 | `.55` (`test-1`) | 5,000-iteration rooted Python control + Fleetbench `mozdevice` | Python Try `7757fb…`; `v0.4.6` | Rooted parity validated | All eight bare USB serials completed 5,000 samples per implementation; both selected `su -c`. Fleetbench median was 326.10 ms vs Python 327.09 ms (-0.30%). |
 | 2026-07-29 | `.55` (`test-1`) | Bracketed Python controls + Fleetbench `mozdevice` | `v0.4.5` | Command-path gap remains | Python controls held a ~294–295 ms median; 40,000 Fleetbench samples were clean but had a 136.61 ms median. |
-| Pending release | `.55`, then `.47` | Eight-device 25 B `mozdevice` push validation | Next release | Planned | Direct Fleetbench analogue of Sparky's probe on each all-a55 host; require bare USB serials and sustained overlap before interpreting either distribution. |
+| Pending run | `.47` | Eight-device 25 B `mozdevice` push validation | `v0.4.6` | Planned | Repeat the validated `.55` rooted comparison on the second all-a55 host; require bare USB serials and sustained overlap before interpreting either distribution. |
 | Pending release | `.55`, then `.47` | Directional saturation suite | Next release | Planned | All eight devices per host; sustained 25 B and 50 KiB push, then pull. Run only after each host's `mozdevice` validation is clean. |
 | 2026-07-29 | Local Pixel 10 Pro | Interleaved Python vs Fleetbench `mozdevice` | `b7f629b` + `67c3e78` diagnostics | Near parity | Four alternating 50-sample blocks per implementation (200 each): Fleetbench mean was 1.7% lower, and phase timings matched. |
 | 2026-07-28 | `.55` (`test-1`) | Literal Sparky `mozdevice` probe | Try `7757fb…` | Baseline reproduced | Eight bare USB serials / 1,600 raw replicates: 292.01 ms median, 332.39 ms p95, 393.68 ms maximum. This recovered Sparky's ~280 ms baseline, but not the historical LambdaTest tail. |
@@ -24,6 +24,36 @@ both hosts. Any previous `stab`-pool performance issue is historical context,
 not a reason to exclude `.47` from the new comparison.
 
 ## Results
+
+### 2026-07-30 — `.55` rooted mozdevice parity validation
+
+After the initial 45-minute launcher limit proved too short for the long
+literal-Python control, an eight-device, 5,000-iteration control ran with a
+two-hour per-device allowance. All expected bare USB serials completed and
+uploaded the manifest, Perfherder raw replicates, verbose mozdevice log, and
+per-subprocess phase timings. Every Python client reported `su -c supported`.
+
+The matching eight-device Fleetbench `v0.4.6` run also completed with 5,000
+checksum-verified samples per device. Every envelope recorded
+`adb_config.mozdevice_root_mode: "su_c"`; no sample lacked transfer timestamps.
+
+| Implementation | Samples | Mean | Median | p95 | p99 | Maximum |
+|---|---:|---:|---:|---:|---:|---:|
+| Literal Python `mozdevice` | 40,000 | 325.63 ms | 327.09 ms | 370.85 ms | 387.65 ms | 1,127.27 ms |
+| Fleetbench v0.4.6 `mozdevice` | 40,000 | 323.91 ms | 326.10 ms | 366.71 ms | 383.14 ms | 806.02 ms |
+
+Fleetbench was 1.72 ms (0.53%) lower on mean and 0.99 ms (0.30%) lower on
+median. Per-device median deltas ranged from -6.55 ms to +1.76 ms. The
+sustained phase distributions also closely aligned: Python/Fleetbench medians
+were 105.81/106.94 ms for pre-sync, 86.59/86.74 ms for the directory check,
+29.03/26.56 ms for push, and 108.18/108.95 ms for post-sync. External-storage
+discovery occurred once per device; its 28.76/66.17 ms median difference is
+not material to the 40,000-sample sustained distribution.
+
+This removes the command-path gap seen in v0.4.5 and validates Fleetbench's
+rooted `su -c` compatibility path on the `.55` shared host. The next direct
+comparison is the same validation on `.47`, followed by the directional
+saturation suite.
 
 ### 2026-07-29 — `.55` bracketed `mozdevice` controls and Fleetbench v0.4.5
 
