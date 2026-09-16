@@ -22,6 +22,27 @@ windows, never from job submission or start time.
   unavailable, defer the entire host.
 - Use `--parallel 8`, `--start-delay 0`, and `--retries 0` for saturation
   batches.
+- Before every `.47` batch, from `~/git/android-tools/worker-health`,
+  quarantine all eight selected devices for two hours:
+
+  ```bash
+  pipenv run ./quarantine_tool.py proj-autophone gecko-t-lambda-perf-a55 quarantine \
+    -r 'benchmark testing' -d '2 hours' \
+    RZCY10Y548K,RZCY10Y4TJX,RZCY10Y4TBY,RZCY10Y4TAV,\
+    RZCY10Y4QVX,RZCY10Y4HWD,RZCY10LGB6W,RZCX821GXDJ
+  ```
+
+  Then, from `~/git/mozilla-bitbar-devicepool`, wait for the complete set to
+  be idle:
+
+  ```bash
+  uv run lt_device_availability --wait \
+    RZCY10Y548K RZCY10Y4TJX RZCY10Y4TBY RZCY10Y4TAV \
+    RZCY10Y4QVX RZCY10Y4HWD RZCY10LGB6W RZCX821GXDJ
+  ```
+
+  Do not submit `lt_run_cmd` until this command succeeds. Repeat this
+  quarantine-and-idle preflight for each separate `.47` phase.
 - Use `--env FLEETBENCH_VERSION=<release>` to forward the direction-capable
   release into each remote job. The long-running launchers default to 5,000
   iterations and 25 B; override them with `--env` when needed.
