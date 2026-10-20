@@ -9,9 +9,10 @@ copy/paste-ready launch command.
 
 | Date | Host | Phase | Version | Outcome | Notes |
 |---|---|---|---|---|---|
+| 2026-09-16 UTC | `.47` | 5,000-iteration rooted Python control | Python Try `7757fb…` | Control complete; Fleetbench comparison pending | All eight intended bare serials completed 5,000 samples and reported `su -c supported`. Mean 328.88 ms, p95 368.04 ms, p99 384.66 ms. Per-transfer overlap is not measurable from this control. |
 | 2026-07-30 | `.55` (`test-1`) | 5,000-iteration rooted Python control + Fleetbench `mozdevice` | Python Try `7757fb…`; `v0.4.6` | Rooted parity validated | All eight bare USB serials completed 5,000 samples per implementation; both selected `su -c`. Fleetbench median was 326.10 ms vs Python 327.09 ms (-0.30%). |
 | 2026-07-29 | `.55` (`test-1`) | Bracketed Python controls + Fleetbench `mozdevice` | `v0.4.5` | Command-path gap remains | Python controls held a ~294–295 ms median; 40,000 Fleetbench samples were clean but had a 136.61 ms median. |
-| Pending run | `.47` | Paired rooted Python control + Fleetbench 25 B `mozdevice` validation | Python Try `7757fb…`; `v0.4.6` | Planned | Run the long literal-Python control and matching Fleetbench mode against the same eight a55 devices, with bare USB serials and sustained overlap. This establishes the `.47` host baseline as well as cross-implementation parity. |
+| Pending run | `.47` | Matching Fleetbench 25 B `mozdevice` validation | `v0.4.6` | Python control complete | Run matching Fleetbench mode against the same eight a55 devices with strict `su_c`, bare USB serials, and measured transfer overlap. Repeat a Python control when needed to assess host-state drift across the time gap. |
 | Pending run | `.55`, then `.47` | Full-contention saturation suite | `v0.4.6` | Planned | After each host's `mozdevice` validation is clean, run eight-device 25 B `mozdevice` push with strict `su_c`, 50 KiB direct push/pull, and dedicated 100 MiB push/pull. Mixed bulk remains supplemental. |
 | Future measurement | `.55` and `.47` | Composite-latency SLA calibration | Current release | Planned | Collect at least three clean, separated eight-device rooted `mozdevice` runs per host, retaining per-device and peer-overlap summaries, before tightening latency objectives. |
 | 2026-07-29 | Local Pixel 10 Pro | Interleaved Python vs Fleetbench `mozdevice` | `b7f629b` + `67c3e78` diagnostics | Near parity | Four alternating 50-sample blocks per implementation (200 each): Fleetbench mean was 1.7% lower, and phase timings matched. |
@@ -25,6 +26,38 @@ both hosts. Any previous `stab`-pool performance issue is historical context,
 not a reason to exclude `.47` from the new comparison.
 
 ## Results
+
+### 2026-09-16 UTC — `.47` rooted Python control
+
+Run `20260915_222506_391275` targeted the eight approved `.47` serials.
+All eight jobs returned OK, each manifest named its expected bare serial,
+and each verbose log selected that serial and reported `su -c supported`.
+Each device retained a manifest, Perfherder JSON, verbose log, and phase-timing
+JSON. The report date is September 15 in the launcher's local timezone;
+manifest timestamps are September 16 UTC.
+
+Artifact root (relative to `~/git/mozilla-bitbar-devicepool`):
+`lt_run_cmd_output/20260915_222506_391275/artifacts/`.
+The report is the adjacent `report.md`. Per-device files are under
+`<serial>/extra-artifact-1/1/fleetbench-artifacts/`.
+
+| Samples | Mean | Median | p95 | p99 | Maximum |
+|---:|---:|---:|---:|---:|---:|
+| 40,000 | 328.88 ms | 329.55 ms | 368.04 ms | 384.66 ms | 1,196.51 ms |
+
+Percentiles use nearest rank. Each device contributed 5,000 samples;
+per-device p95 ranged from 363.91 to 371.25 ms and p99 from 379.21 to
+390.65 ms. Aggregate mean, p95, and p99 meet the stated latency references.
+Median phase times were 106.86 ms pre-sync, 86.75 ms directory check,
+28.66 ms push, and 109.76 ms post-sync. External-storage discovery occurred
+once per device (29.08 ms median).
+
+Manifest lifetimes overlap, but include initialization and deferred cleanup.
+Neither the raw replicates nor the phase diagnostics record per-transfer UTC
+windows, so these artifacts cannot establish eight-way transfer contention.
+The matching strict-root Fleetbench run remains pending. Because a later run
+may encounter different host conditions, compare the recorded phase timings
+and repeat a Python control if necessary before claiming implementation parity.
 
 ### 2026-07-30 — `.55` rooted mozdevice parity validation
 
